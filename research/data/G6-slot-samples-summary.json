@@ -1,0 +1,233 @@
+{
+  "summary": {
+    "measured_from": "2026-09-20T23:18:12.000Z",
+    "measured_to": "2026-10-23T12:26:40.000Z",
+    "first_slot": 448877583,
+    "last_slot": 460442526,
+    "slots_spanned": 11564943,
+    "seconds_spanned": 2812108,
+    "samples": 121,
+    "intervals": 120,
+    "overall_ms_per_slot": 243.158,
+    "interval_min": 211.549,
+    "interval_max": 269.956,
+    "interval_sd": 25.417,
+    "daily_min": 211.669,
+    "daily_max": 268.757,
+    "daily_spread": 57.088,
+    "daily_sd": 25.035,
+    "rpc_stats": {
+      "calls": 137,
+      "retries429": 14,
+      "otherErrors": 0,
+      "endpointSwitches": 0
+    },
+    "endpoint_used_last": "https://api.mainnet-beta.solana.com"
+  },
+  "daily": [
+    {
+      "day": "2026-09-20",
+      "ms_per_slot": 266.9364461738003,
+      "intervals": 1,
+      "slots": 96375
+    },
+    {
+      "day": "2026-09-21",
+      "ms_per_slot": 267.1873216589479,
+      "intervals": 3,
+      "slots": 289123
+    },
+    {
+      "day": "2026-09-22",
+      "ms_per_slot": 266.9235345388138,
+      "intervals": 3,
+      "slots": 289124
+    },
+    {
+      "day": "2026-09-23",
+      "ms_per_slot": 265.3814027569533,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-09-24",
+      "ms_per_slot": 266.3157202989731,
+      "intervals": 3,
+      "slots": 289123
+    },
+    {
+      "day": "2026-09-25",
+      "ms_per_slot": 267.4112145653768,
+      "intervals": 3,
+      "slots": 289124
+    },
+    {
+      "day": "2026-09-26",
+      "ms_per_slot": 268.42162605253463,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-09-27",
+      "ms_per_slot": 268.2205558860558,
+      "intervals": 3,
+      "slots": 289124
+    },
+    {
+      "day": "2026-09-28",
+      "ms_per_slot": 268.0208769278127,
+      "intervals": 3,
+      "slots": 289123
+    },
+    {
+      "day": "2026-09-29",
+      "ms_per_slot": 267.6330357096535,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-09-30",
+      "ms_per_slot": 267.642949046084,
+      "intervals": 3,
+      "slots": 289124
+    },
+    {
+      "day": "2026-10-01",
+      "ms_per_slot": 267.6404160167126,
+      "intervals": 3,
+      "slots": 289123
+    },
+    {
+      "day": "2026-10-02",
+      "ms_per_slot": 267.47410499119326,
+      "intervals": 4,
+      "slots": 385499
+    },
+    {
+      "day": "2026-10-03",
+      "ms_per_slot": 267.3152948744998,
+      "intervals": 3,
+      "slots": 289123
+    },
+    {
+      "day": "2026-10-04",
+      "ms_per_slot": 267.6589761814588,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-05",
+      "ms_per_slot": 268.07874821875737,
+      "intervals": 3,
+      "slots": 289124
+    },
+    {
+      "day": "2026-10-06",
+      "ms_per_slot": 268.5984857655738,
+      "intervals": 3,
+      "slots": 289123
+    },
+    {
+      "day": "2026-10-07",
+      "ms_per_slot": 268.50722960949213,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-08",
+      "ms_per_slot": 268.75665804291583,
+      "intervals": 3,
+      "slots": 289124
+    },
+    {
+      "day": "2026-10-09",
+      "ms_per_slot": 236.3099160047523,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-10",
+      "ms_per_slot": 218.2579416754432,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-11",
+      "ms_per_slot": 218.3876440344697,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-12",
+      "ms_per_slot": 218.64964279970323,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-13",
+      "ms_per_slot": 218.36632520447523,
+      "intervals": 4,
+      "slots": 385499
+    },
+    {
+      "day": "2026-10-14",
+      "ms_per_slot": 216.7170776502083,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-15",
+      "ms_per_slot": 216.34872295057303,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-16",
+      "ms_per_slot": 216.08672418533948,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-17",
+      "ms_per_slot": 216.86879503270578,
+      "intervals": 5,
+      "slots": 481872
+    },
+    {
+      "day": "2026-10-18",
+      "ms_per_slot": 216.90328638984798,
+      "intervals": 4,
+      "slots": 385499
+    },
+    {
+      "day": "2026-10-19",
+      "ms_per_slot": 217.36818349252135,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-20",
+      "ms_per_slot": 217.16584781244,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-21",
+      "ms_per_slot": 214.19306974355248,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-22",
+      "ms_per_slot": 212.169712942739,
+      "intervals": 4,
+      "slots": 385498
+    },
+    {
+      "day": "2026-10-23",
+      "ms_per_slot": 211.6690618368967,
+      "intervals": 2,
+      "slots": 192749
+    }
+  ]
+}

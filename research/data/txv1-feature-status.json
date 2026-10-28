@@ -1,0 +1,12 @@
+{
+  "gate": "txv1aq4pp281K9um3tnPgkfX8UqtFT6wcVW3hNezGLL",
+  "exists": true,
+  "owner": "Feature111111111111111111111111111111111111",
+  "dataLen": 9,
+  "dataHex": "018082a61a00000000",
+  "activated": true,
+  "activatedAtSlot": 447120000,
+  "currentSlot": 460443072,
+  "epoch": 1065,
+  "checkedAt": "2026-10-23T12:28:34.977Z"
+}

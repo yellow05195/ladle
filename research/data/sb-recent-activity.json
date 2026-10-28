@@ -1,0 +1,396 @@
+{
+  "checked_at": "2026-10-23T12:37:13.616Z",
+  "newest": {
+    "slot": 457429330,
+    "time": "2026-10-15T23:59:17.000Z"
+  },
+  "oldest_of_60": {
+    "slot": 454686334,
+    "time": "2026-10-08T23:04:19.000Z"
+  },
+  "kinds": {
+    "unknown:ea0585cc372555de": 85,
+    "unknown:92650e4ae1f6009c": 14
+  },
+  "sample": [
+    {
+      "sig": "4RLnYyL3n3AW8Z16BWEyBrDYXLmQRBSh1iM5QkHPqBnokHnZr1sn2RGXDdCTJNx1G3Co6bus6vDfsg9pYJa9JaXQ",
+      "slot": 457429330,
+      "time": "2026-10-15T23:59:17.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "4g5NaMU6VhvQBUE524o6qxnFftiwQrRCHSURHWJ2Z7YbTjQmwn9cQGJiFBpcuc9eHAQavBfZPDu41s5fPF21gsyX",
+      "slot": 457429312,
+      "time": "2026-10-15T23:59:14.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "48tJ1c8aaV7eLwoNxV2Giy6x2vifmEMUDDmJc7DRKLtdQterKSzhdFYV6anfAazZRGCdYkvJs3tjwDvYweRFL3WV",
+      "slot": 457429305,
+      "time": "2026-10-15T23:59:12.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "5vqmaJNSXikPK1xeG9cycb3622pzEAgED4pMjwYzq7vUmgew6X6DBgJX16bqLa2RtuYYmqu7DsJ5uJAaPe91ehV3",
+      "slot": 457429284,
+      "time": "2026-10-15T23:59:07.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "4eSohH1TmJBKA82eGi8VV4eY8CD2SPASQvw7gFXDGN3xwPQyqVZKtHyLN36Ceje46EiPa3ZkxhohAwBF2FDTN7fk",
+      "slot": 457429272,
+      "time": "2026-10-15T23:59:05.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "3sUXbdvLdziZsyXJTNHBQBUfY7ndZKqrC2Cmq4q7uxY84HDCLWC6t4YjkDzfRYFYPvCLuFxMMbAZj32FPQcyHYTi",
+      "slot": 457429262,
+      "time": "2026-10-15T23:59:02.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "494deH8UZ1LGibqP57SnF9mUAA5YHFZNzteVntVX5YMB8eSBx1EyuFnLH3ikRRCDVXpLJPRJVzybWnp41RgdDrGz",
+      "slot": 457429241,
+      "time": "2026-10-15T23:58:58.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "2Vke1wM829og45mupzMhxYiLZHcvenG54oCdQJA9piMGNKNThQ3V1aDTwCeqn73J7beHq7XgSnT2f3JQCThkyWGc",
+      "slot": 457429215,
+      "time": "2026-10-15T23:58:51.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "5nyUA6kaxr6hooCg3XQjSoagQZDoBP1nMNJjsFGv3Y1obLcYv7gqNiwFaUA4dd6dqWK7zkMRpziWK8yRYdJagEgQ",
+      "slot": 457429208,
+      "time": "2026-10-15T23:58:50.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "3hLRYtVVKMR9QwacY5hSd1oipV7VGe4Vbp9CAJMuK7Zs3tjDbvJ3eoTPtNebRSgMmL4JTqjyC3LyCg168edP9PA3",
+      "slot": 457429189,
+      "time": "2026-10-15T23:58:46.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "jT3xV7ZJP94oYNUtzmb6aMKtHfjKotm5cvdF5KkZThZL3nrp8Xw6qRaAM9pzA4v6MiyWpQerb6dbMrTBtfJyZYr",
+      "slot": 457429175,
+      "time": "2026-10-15T23:58:43.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "tb7NhQrC9UEHR2rXQRtPidLvLKVR6ro8cQFfpR8M8UjNw7CEBXzY4en27tse7HUmutxHNWRY4P3KENvvJzNiyYG",
+      "slot": 457429164,
+      "time": "2026-10-15T23:58:40.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "2KG9x9x8TWyqNXbKReiGhLEa2UZsszWa91Jmg5AzS5ygJnVekVFMJ1SSYHbJoJxpLTAvgyenRCJKy9nUVyzEQ2Df",
+      "slot": 457429148,
+      "time": "2026-10-15T23:58:37.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "3W1RD6h4hViUZbEVo8ShUveqF5YwkFsdqopWCEW9PCw9HNAvA5VtMSwEycYL3pRS82DMWBV28Zx5bPxJWPUfc9vg",
+      "slot": 457428989,
+      "time": "2026-10-15T23:58:03.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "3t5cpz5mZdNfBTU6TLBJtMhWkfYfmrij4PL6L5bKsg4o1iG7bdUvb5sywY4soSqj1Lee4gbaC9hFTx5cU4DAgVfS",
+      "slot": 457428971,
+      "time": "2026-10-15T23:57:59.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "XaummuTpg2qEiL3G5CtwrMK7T39BWe33GYjkMd965hYpVU2E6qQRtCyJmMFaKh9CpixpddWeFJHobSY4phGjysD",
+      "slot": 457428956,
+      "time": "2026-10-15T23:57:56.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "3tVekjcg84UB9s52BTuj5eSZTjwYtFHLhPfDzsbQ1VLT2Kwfx4kLriAgQRZDa912RMvx53cnDgHZcNWdXSFqWUHF",
+      "slot": 457428933,
+      "time": "2026-10-15T23:57:52.000Z",
+      "err": null,
+      "names": [
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de",
+        "unknown:ea0585cc372555de"
+      ],
+      "logs": [
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable",
+        "Instruction: RandomnessCloseLut",
+        "Instruction: CloseLookupTable"
+      ]
+    },
+    {
+      "sig": "3SZkSx9jKjwqHmzDRcX4QamJ2nyQE81St9BA9STaZ45rbLk9f6P42yr1se9NwAB72eLCntUid2Zc71xekpQ22fkT",
+      "slot": 457417831,
+      "time": "2026-10-15T23:17:38.000Z",
+      "err": null,
+      "names": [
+        "unknown:92650e4ae1f6009c",
+        "unknown:92650e4ae1f6009c",
+        "unknown:92650e4ae1f6009c",
+        "unknown:92650e4ae1f6009c"
+      ],
+      "logs": [
+        "Instruction: RandomnessClose",
+        "Instruction: DeactivateLookupTable",
+        "Instruction: RandomnessClose",
+        "Instruction: DeactivateLookupTable"
+      ]
+    },
+    {
+      "sig": "37jJNKJPga1CNUG9mko9WhFCMbZpTFdvqtP3ZvZ3SUHR1MJugZ6BK4HqsLzay34DdduJymZQx4bFwKXN8j2wgBss",
+      "slot": 457417819,
+      "time": "2026-10-15T23:17:35.000Z",
+      "err": null,
+      "names": [
+        "unknown:92650e4ae1f6009c",
+        "unknown:92650e4ae1f6009c",
+        "unknown:92650e4ae1f6009c",
+        "unknown:92650e4ae1f6009c",
+        "unknown:92650e4ae1f6009c"
+      ],
+      "logs": [
+        "Instruction: RandomnessClose",
+        "Instruction: DeactivateLookupTable",
+        "Instruction: RandomnessClose",
+        "Instruction: DeactivateLookupTable"
+      ]
+    },
+    {
+      "sig": "3G6sTfS883rH7zA9VnqBZowZ4T8cssGHAzDR3vX6QtkW4DNVsxpyD4N7WoQvGziUGrsx5zMJi4xkjLvSbabU53JK",
+      "slot": 457417802,
+      "time": "2026-10-15T23:17:32.000Z",
+      "err": null,
+      "names": [
+        "unknown:92650e4ae1f6009c",
+        "unknown:92650e4ae1f6009c",
+        "unknown:92650e4ae1f6009c",
+        "unknown:92650e4ae1f6009c",
+        "unknown:92650e4ae1f6009c"
+      ],
+      "logs": [
+        "Instruction: RandomnessClose",
+        "Instruction: DeactivateLookupTable",
+        "Instruction: RandomnessClose",
+        "Instruction: DeactivateLookupTable"
+      ]
+    }
+  ]
+}

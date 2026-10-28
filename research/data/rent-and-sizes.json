@@ -1,0 +1,32 @@
+{
+  "checked_at": "2026-10-23T12:32:11.396Z",
+  "rent": {
+    "137": 1346200,
+    "480": 3088640,
+    "749": 4455160
+  },
+  "switchboard_randomness_accounts": [
+    {
+      "pubkey": "11nZ7QfUPdhMtXVrcvguvGFoGb6wRPvKF6NeCiEusHG",
+      "lamports": 4231680,
+      "dataLen": 480,
+      "owner": "SBondMDrcV3K4kxZR1HNVT7osZxAHVHgYXL5Ze1oMUv"
+    },
+    {
+      "pubkey": "12cPzs9zd59nHohQNe9BX6MNUybWsXR9SFizXiopXXY",
+      "lamports": 4231680,
+      "dataLen": 480,
+      "owner": "SBondMDrcV3K4kxZR1HNVT7osZxAHVHgYXL5Ze1oMUv"
+    },
+    {
+      "pubkey": "12ybsJdgWfPr7oDDDYtkZHhFJiXLedZygMmHjXZsopS",
+      "lamports": 4231680,
+      "dataLen": 480,
+      "owner": "SBondMDrcV3K4kxZR1HNVT7osZxAHVHgYXL5Ze1oMUv"
+    }
+  ],
+  "notes": {
+    "orao_pending_749": "ORAO RandomnessV2 pending account: 8 + 1 + 32 + 32 + 4 + 7*96 bytes",
+    "orao_fulfilled_137": "ORAO RandomnessV2 fulfilled account after realloc: 8 + 1 + 32 + 32 + 64 bytes"
+  }
+}

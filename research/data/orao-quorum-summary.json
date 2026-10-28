@@ -1,0 +1,57 @@
+{
+  "note": "Latency from request_v2 tx to the fulfill_v2 tx that emitted the Anchor `Fulfill` event (quorum reached; fulfilled_randomness() becomes Some). This is the latency that matters for a consumer.",
+  "fulfill_event_discriminator": "83f5c8fc002e902d",
+  "response_event_discriminator": "2c0a4efca852cedf",
+  "which_fulfill_tx_emits_Fulfill_event_index_histogram_0based": {
+    "1": 6,
+    "2": 307,
+    "-1": 1
+  },
+  "n": 313,
+  "time_range": {
+    "from": "2026-10-16T13:35:22.000Z",
+    "to": "2026-10-17T22:49:49.000Z"
+  },
+  "slot_delta": {
+    "n": 313,
+    "min": 5,
+    "max": 726,
+    "median": 20,
+    "p90": 340,
+    "p95": 396,
+    "p99": 528,
+    "mean": 82.39616613418531
+  },
+  "time_delta_s": {
+    "n": 313,
+    "min": 1,
+    "max": 158,
+    "median": 4,
+    "p90": 72,
+    "p95": 86,
+    "p99": 113,
+    "mean": 17.808306709265175
+  },
+  "share_within_20s": 0.7603833865814696,
+  "share_within_30s": 0.8083067092651757,
+  "share_within_60s": 0.8690095846645367,
+  "share_within_120s": 0.9936102236421726,
+  "share_within_50_slots": 0.6932907348242812,
+  "share_within_100_slots": 0.7603833865814696,
+  "share_within_300_slots": 0.8722044728434505,
+  "share_within_600_slots": 0.9968051118210862,
+  "time_histogram_s": {
+    "<=1": 63,
+    "<=2": 64,
+    "<=3": 22,
+    "<=5": 25,
+    "<=10": 42,
+    "<=20": 22,
+    "<=30": 15,
+    "<=60": 19,
+    "<=90": 32,
+    "<=120": 7,
+    "<=180": 2,
+    ">180": 0
+  }
+}

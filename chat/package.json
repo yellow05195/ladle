@@ -1,0 +1,26 @@
+{
+  "name": "@ladle/chat",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "The Ladle room relay: one shared chat and one shared crowd over WebSocket. Talk is signed by a wallet; commands stay local to each player.",
+  "engines": { "node": ">=22.6" },
+  "bin": { "ladle-chat": "./src/index.ts" },
+  "exports": {
+    ".": "./src/relay.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "8.18.2",
+    "typescript": "^5.9.0"
+  }
+}

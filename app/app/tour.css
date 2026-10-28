@@ -1,0 +1,184 @@
+/*
+ * Ladle, v21.1: the home's scroll tour (§7.17; layout from v21 §15). Below
+ * the first screen the page is the live hall: the canvas stays fixed behind
+ * every chapter, nothing opaque covers it, and each chapter's text scrolls
+ * over it on a side scrim fixed to the viewport (never a band or a card).
+ * Desktop (1024 px and wider, landscape): the caption beside the subject,
+ * alternating sides. Portrait: the subject above, the caption below.
+ * A caption: the label ("1 of 8 · How a round plays"), Display L, the
+ * lede, one block, one link. Free-standing type carries the halo; plates
+ * (the ledger, the questions) and wells do not. Tokens from globals.css.
+ */
+
+/* ------------------------------ the hall is the page ------------------------------ */
+
+/* the first screen's playbill scrim leaves with the playbill */
+html[data-tour] .hall-scrims .s-home { transition: opacity 400ms var(--ease-out); }
+html[data-tour][data-scrolled="1"] .hall-scrims .s-home { opacity: 0; }
+/* the top bar keeps a soft fade on the tour (no solid band): deep under the wordmark and the nav, gone 64 px below them */
+@media (min-width: 768px) {
+  html[data-tour][data-scrolled="1"] .tb:not(.inner) { background: transparent; }
+}
+html[data-tour] .tb:not(.inner)::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: calc(100% + 64px); z-index: -1; pointer-events: none; background: linear-gradient(180deg, rgba(15, 11, 9, 0.97) 0, rgba(15, 11, 9, 0.94) calc(var(--top-h) - 8px), rgba(15, 11, 9, 0) calc(var(--top-h) + 64px)); opacity: 0; transition: opacity var(--dur-2) var(--ease-out); }
+html[data-tour][data-scrolled="1"] .tb:not(.inner)::before { opacity: 1; }
+/* stacked first screens (under 1100 px): the playbill's scrim fades into the hall below it */
+@media (max-width: 1099px) {
+  html[data-tour] .first::after { content: ""; display: block; height: 96px; background: linear-gradient(180deg, rgba(15, 11, 9, 0.8) 0, rgba(15, 11, 9, 0) 100%); }
+}
+
+/* ------------------------------ chapters ------------------------------ */
+
+.tour, .tour-scrim { --cap-w: min(470px, 39vw); --cap-wide: min(620px, 50vw); --index-w: 28px; }
+.tour { position: relative; z-index: 11; overflow-x: clip; }
+.tour-ch { position: relative; min-height: 140vh; display: flex; align-items: center; }
+/* the captions sit on the chrome's lines: left ones on the gutter (the wordmark, the playbill, the footer), right ones a side index short of the nav's edge */
+.tour-in { width: 100%; padding: 16vh var(--gutter); display: flex; justify-content: flex-start; }
+.tour-ch[data-side="right"] .tour-in { justify-content: flex-end; padding-right: calc(var(--gutter) + var(--index-w)); }
+
+.tour-cap { position: relative; isolation: isolate; width: var(--cap-w); display: grid; gap: 0; align-content: start; justify-items: start; scroll-margin-top: max(96px, 14vh); text-shadow: var(--halo); }
+.tour-cap.wide { width: var(--cap-wide); }
+.tour-cap > * { max-width: 100%; min-width: 0; }
+.tour-cap > :is(.t-beats, .t-facts, .t-ledger, .t-curve, .pg-gloss, .pg-qa, .t-faces, .pg-swarm, .pg-swarm-facts) { width: 100%; justify-self: stretch; }
+/* plates, wells, discs and keys need no halo */
+.tour-cap :is(.t-ledger, .pg-qa, .tok, .disc, .key, .face) { text-shadow: none; }
+
+/* the rhythm (mockup f3): label 12, headline 14, lede 26, block 28, link */
+.tour-cap > .label { color: var(--ink-2); }
+.tour-cap > .pg-h { margin-top: 12px; max-width: 9.5em; text-wrap: pretty; }
+.tour-cap.wide > .pg-h { max-width: 12em; }
+.tour-cap > .lede { margin-top: 14px; max-width: 30em; }
+.tour-cap > .lede + * { margin-top: 26px; }
+.tour-cap > .pg-h + :is(.pg-qa, .t-facts) { margin-top: 26px; }
+.tour-cap > * + .t-more { margin-top: 28px; }
+.tour-cap > * + .fine { margin-top: 14px; }
+.tour-cap > .fine + .fine { margin-top: 6px; }
+.tour-cap > .pg-swarm + .pg-swarm-facts { margin-top: 16px; }
+.tour-cap > .t-curve + .t-facts { margin-top: 18px; }
+.tour-cap > .t-facts + .t-faces, .tour-cap > .t-ledger + .t-identity { margin-top: 18px; }
+.tour-cap .fine { color: var(--ink-3); }
+
+/* the side scrim (desktop): fixed, static, shaped like the first screen's; solid under the caption, then a 190 px fade into the hall */
+.tour-scrim { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+.tour-scrim > i { position: absolute; inset: 0; opacity: 0; transition: opacity 180ms linear; --cw: var(--cap-w); }
+.tour-scrim .l { background: linear-gradient(90deg, rgba(15, 11, 9, 0.9) 0, rgba(15, 11, 9, 0.86) calc(var(--gutter) + var(--cw) + 32px), rgba(15, 11, 9, 0) calc(var(--gutter) + var(--cw) + 220px)); }
+.tour-scrim .r { background: linear-gradient(270deg, rgba(15, 11, 9, 0.9) 0, rgba(15, 11, 9, 0.86) calc(var(--gutter) + var(--index-w) + var(--cw) + 32px), rgba(15, 11, 9, 0) calc(var(--gutter) + var(--index-w) + var(--cw) + 220px)); }
+@media (prefers-reduced-motion: reduce) { .tour-scrim > i { transition: none; } }
+
+/* ------------------------------ the beats: a disc, the title, one sentence ------------------------------ */
+
+.t-beats { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.t-beats > li { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 14px; align-items: center; }
+.t-beats .disc { font-size: 18px; transition: background-color 200ms var(--ease-out), color 200ms var(--ease-out); }
+.t-beats .tx { display: grid; gap: 2px; min-width: 0; }
+.t-beats .title { font-size: 19px; }
+.t-beats p { font: 450 15.5px/1.4 var(--font-sans); color: var(--ink-2); }
+@media (prefers-reduced-motion: reduce) { .t-beats .disc { transition: none; } }
+
+/* ------------------------------ facts, the link ------------------------------ */
+
+.t-facts { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 30px; }
+.t-fact { display: grid; gap: 7px; align-content: start; min-width: 0; }
+.t-fact > .num-l { white-space: nowrap; }
+.t-fact > .label { color: var(--ink-2); max-width: 26ch; }
+.t-more { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center; }
+
+/* ------------------------------ the small curve (§7.19) ------------------------------ */
+
+.t-curve { position: relative; height: 96px; }
+.t-curve svg { display: block; width: 100%; height: 96px; overflow: visible; }
+.t-curve.wait { height: 96px; }
+.t-curve .now { position: absolute; width: 0; height: 0; }
+.t-curve .now i { position: absolute; left: -8px; top: -8px; width: 16px; height: 16px; border-radius: 50%; background: var(--ground); }
+.t-curve .now i::after { content: ""; position: absolute; left: 3px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--ink); }
+.t-curve .now b { position: absolute; right: 14px; bottom: 6px; white-space: nowrap; color: var(--ink-2); }
+
+/* ------------------------------ the ledger plate (§7.18) ------------------------------ */
+
+.t-ledger { --r: var(--r-plate); margin: 0; padding: 6px; display: grid; background: var(--ground-2); }
+.t-ledger > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; padding: 0 16px; border-radius: var(--r-key-xs); }
+.t-ledger dt { font: 500 17px/1.3 var(--font-sans); color: var(--ink-2); }
+.t-ledger dd { margin: 0; display: inline-flex; align-items: baseline; white-space: nowrap; }
+.t-ledger dd .num-m { font-size: 24px; }
+.t-ledger dd .unit { font-size: 14px; }
+.t-ledger.wait { height: 180px; }
+.t-identity { max-width: 44ch; }
+
+/* ------------------------------ commands over the hall: tokens, no plate ------------------------------ */
+
+.tour-cap .pg-gloss { padding: 0; gap: 10px; background: none; }
+.tour-cap .pg-gloss > div, .tour-cap .pg-gloss > div:nth-child(odd) { padding: 0; background: none; grid-template-columns: 124px minmax(0, 1fr); gap: 4px 14px; }
+.tour-cap .pg-gloss .tok, .tour-cap .pg-gloss > div:nth-child(even) .tok { background: var(--ground-3); }
+.tour-cap .pg-gloss dd { font-size: 15.5px; line-height: 1.45; }
+
+/* ------------------------------ Genesis portraits: one row of six, in discs ------------------------------ */
+
+.t-faces { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 10px; }
+.t-faces li { display: grid; gap: 4px; justify-items: start; min-width: 0; }
+.t-faces .face { width: 56px; height: 56px; border-radius: 50%; background: var(--ground-3); overflow: hidden; display: grid; place-items: center; margin-bottom: 4px; }
+.t-faces img { width: 68px; height: 68px; object-fit: cover; object-position: 50% 30%; display: block; }
+.t-faces .nm { max-width: 100%; font: 700 13px/1.3 var(--font-sans); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------ the swarm in a caption ------------------------------ */
+
+.tour-cap .pg-swarm-facts .pg-facts { gap: 16px 30px; }
+.tour-cap .pg-swarm-facts .label { color: var(--ink-2); }
+.tour-cap .pg-swarm .lbl, .tour-cap .pg-swarm .ax { fill: var(--ink-2); }
+
+/* ------------------------------ questions over the dimmed room ------------------------------ */
+
+.tour-cap.wide .pg-qa { width: 100%; }
+
+/* ------------------------------ the footer: a short fade, then the deepest ground ------------------------------ */
+
+.tour-foot { position: relative; margin-top: 8vh; }
+.tour-foot .foot { background: linear-gradient(180deg, rgba(15, 11, 9, 0) 0, var(--ground-0) 120px, var(--ground-0) 100%); }
+.tour-foot .foot::before { content: none; }
+.tour-foot .foot > .in { padding-top: 152px; max-width: none; }
+/* the side index steps aside once the footer is in view */
+html[data-tour-foot] .tour-index { opacity: 0; visibility: hidden; transition: opacity var(--dur-2) var(--ease-out), visibility 0s linear var(--dur-2); }
+
+/* ------------------------------ the side index (desktop): dots ------------------------------ */
+
+.tour-index { position: fixed; right: 18px; top: 50%; z-index: 12; transform: translateY(-50%); opacity: 0; visibility: hidden; transition: opacity var(--dur-3) var(--ease-out), visibility 0s linear var(--dur-3); }
+.tour-index[data-on="1"] { opacity: 1; visibility: visible; transition: opacity var(--dur-3) var(--ease-out), visibility 0s; }
+.tour-index ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.tour-index a { display: flex; flex-direction: row-reverse; align-items: center; gap: 12px; height: 26px; padding-left: 8px; text-decoration: none; }
+.tour-index a:focus-visible { outline: none; }
+.tour-index .tick { flex: none; display: grid; place-items: center; width: 10px; height: 10px; }
+.tour-index .tick::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-4); box-shadow: 0 0 0 3px rgba(15, 11, 9, 0.55); transition: width 200ms var(--ease-out), height 200ms var(--ease-out), background-color 200ms var(--ease-out); }
+.tour-index a:hover .tick::before { background: var(--ink-3); }
+.tour-index a[aria-current] .tick::before { width: 10px; height: 10px; background: var(--ink); }
+.tour-index a:focus-visible .tick::before { box-shadow: 0 0 0 2px var(--ground), 0 0 0 4px var(--ink); }
+.tour-index .lbl { --r: var(--r-state); padding: 5px 9px; font: 600 13px/1 var(--font-sans); color: var(--ink); white-space: nowrap; background: var(--ground-2); opacity: 0; transform: translateX(4px); transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out); pointer-events: none; }
+.tour-index a:hover .lbl, .tour-index a:focus-visible .lbl { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .tour-index .tick::before, .tour-index .lbl { transition: none; } }
+
+/* ------------------------------ portrait: the subject above, the text below ------------------------------ */
+
+@media (max-width: 1023.98px), (max-aspect-ratio: 999/1000) {
+  .tour-index, .tour-scrim { display: none; }
+  .tour-ch { min-height: 128vh; min-height: 128svh; align-items: flex-start; }
+  .tour-in, .tour-ch[data-side="right"] .tour-in { justify-content: flex-start; padding: 50svh var(--gutter) 10svh; }
+  .tour-cap, .tour-cap.wide { width: 100%; max-width: 600px; }
+  /* the caption's own ground: full bleed, a 120 px fade in above the label, solid .9 under every line, a short fade out */
+  .tour-cap::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none;
+    top: -136px; bottom: -64px; left: calc(-1 * var(--gutter)); right: calc(-1 * var(--gutter));
+    background: linear-gradient(180deg, rgba(15, 11, 9, 0) 0, rgba(15, 11, 9, 0.9) 120px, rgba(15, 11, 9, 0.9) calc(100% - 64px), rgba(15, 11, 9, 0) 100%);
+  }
+  .tour-cap > .pg-h { max-width: 10em; }
+  .t-faces { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tour-cap .pg-gloss > div, .tour-cap .pg-gloss > div:nth-child(odd) { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+/* wider portrait screens: the caption stops at 600 px, its ground still runs to the right edge */
+@media (min-width: 600px) and (max-width: 1023.98px), (min-width: 600px) and (max-aspect-ratio: 999/1000) {
+  .tour-cap::before { right: min(calc(-1 * var(--gutter)), calc(600px + var(--gutter) - 100vw)); }
+  .t-faces { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@media (max-width: 767px) {
+  .t-beats .title { font-size: 18px; }
+  .t-beats p { font-size: 15px; }
+  .t-ledger dt { font-size: 15.5px; }
+  .t-ledger dd .num-m { font-size: 21px; }
+  .t-faces .face { width: 52px; height: 52px; }
+}

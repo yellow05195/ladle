@@ -1,0 +1,6 @@
+{
+  "name": "pulled-g2-research-scripts",
+  "private": true,
+  "type": "commonjs",
+  "description": "Plain-fetch Solana RPC measurement scripts for gate G2 (randomness source latency)."
+}

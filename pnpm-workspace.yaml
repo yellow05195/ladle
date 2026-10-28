@@ -1,0 +1,36 @@
+packages:
+  - sdk
+  - sim
+  - keeper
+  - indexer
+  - app
+  - tests
+  - chat
+allowBuilds:
+  bigint-buffer: false
+  bufferutil: false
+  utf-8-validate: false
+# Resolve only package versions published at least 14 days ago (transitive ones included).
+minimumReleaseAge: 20160
+# Versions already locked before the age rule was added (the app's existing stack); new resolutions still wait 14 days.
+minimumReleaseAgeExclude:
+  - "@monogrid/gainmap-js@3.7.2"
+  - "@next/env@16.4.2"
+  - "@next/swc-darwin-arm64@16.4.2"
+  - "@next/swc-darwin-x64@16.4.2"
+  - "@next/swc-linux-arm64-gnu@16.4.2"
+  - "@next/swc-linux-arm64-musl@16.4.2"
+  - "@next/swc-linux-x64-gnu@16.4.2"
+  - "@next/swc-linux-x64-musl@16.4.2"
+  - "@next/swc-win32-arm64-msvc@16.4.2"
+  - "@next/swc-win32-x64-msvc@16.4.2"
+  - "@react-three/fiber@9.8.2"
+  - "baseline-browser-mapping@2.11.30"
+  - "caniuse-lite@1.0.30001819"
+  - "draco3d@1.5.9"
+  - "lucide-react@1.61.0"
+  - "next@16.4.2"
+  - "postcss@8.5.31"
+  - "react-dom@19.3.1"
+  - "react@19.3.1"
+  - "zustand@5.0.16"

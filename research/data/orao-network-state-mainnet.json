@@ -1,0 +1,16 @@
+{
+  "account": "5ER1oENnV4srxYdAynUfRzWeQCPQaqMiAp4VqyMbSqnK",
+  "authority": "9ZTHWWZDpB36UFe1vszf2KEpt83vwi27jDqtHQ7NSXyR",
+  "treasury": "9ZTHWWZDpB36UFe1vszf2KEpt83vwi27jDqtHQ7NSXyR",
+  "request_fee_lamports": 500000,
+  "fulfillment_authorities": [
+    "9ZTHWWZDpB36UFe1vszf2KEpt83vwi27jDqtHQ7NSXyR",
+    "2VYNr8yMma4KkJLFNiipUxQYbg1fsyao2H6YQfZ1H2Xi",
+    "A9iZdgYabRLeAFEwss72eQr8wWQfZ6hLRmDLtWyxKvKj"
+  ],
+  "token_fee_config": null,
+  "num_received": 125192,
+  "request_fee_sol": 0.0005,
+  "majority_needed": 3,
+  "fetched_at": "2026-10-23T12:30:21.639Z"
+}

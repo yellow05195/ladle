@@ -1,0 +1,60 @@
+{
+  "program": "SBondMDrcV3K4kxZR1HNVT7osZxAHVHgYXL5Ze1oMUv",
+  "endpoints": [
+    "https://api.mainnet-beta.solana.com"
+  ],
+  "generated_at": "2026-10-23T13:11:21.376Z",
+  "randomness_accounts_total_on_mainnet": 82892,
+  "accounts_sampled": 236,
+  "tx_fetched": 488,
+  "tx_null_from_rpc": 0,
+  "tx_versions_seen": {
+    "0": 44,
+    "legacy": 444
+  },
+  "instruction_kinds_seen": {
+    "randomness_init": 236,
+    "randomness_commit": 232,
+    "randomness_reveal": 220
+  },
+  "accounts_with_commit": 232,
+  "accounts_with_reveal": 220,
+  "commits_seen": 232,
+  "commits_revealed": 220,
+  "commits_never_revealed": 12,
+  "time_range": {
+    "from": "2024-08-11T00:25:44.000Z",
+    "to": "2026-09-10T18:23:32.000Z",
+    "from_slot": 282831644,
+    "to_slot": 445951261
+  },
+  "slot_delta_commit_to_reveal": {
+    "n": 220,
+    "min": 4,
+    "max": 200311,
+    "median": 43,
+    "p90": 125,
+    "p95": 309,
+    "p99": 16794,
+    "mean": 1335.4818181818182
+  },
+  "time_delta_commit_to_reveal_s": {
+    "n": 220,
+    "min": 1,
+    "max": 79200,
+    "median": 17,
+    "p90": 49,
+    "p95": 125,
+    "p99": 6666,
+    "mean": 527.8227272727273
+  },
+  "reveals_in_same_tx_as_consumer_cpi": 0,
+  "rpc_stats": {
+    "calls": 762,
+    "retries": 38,
+    "rotations": 0,
+    "perEndpoint": {
+      "https://api.mainnet-beta.solana.com": 762
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "checked_at": "2026-10-23T12:36:41.628Z",
+  "orao_mainnet_program": {
+    "pid": "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y",
+    "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+    "executable": true,
+    "programdata": "91JpgS1vZUPczygkLgNQQL7tzAWUvc7M7HHVEzi8LoPV",
+    "last_deploy_slot": 271013552,
+    "upgrade_authority": "9ZTHWWZDpB36UFe1vszf2KEpt83vwi27jDqtHQ7NSXyR"
+  },
+  "orao_callback_mainnet_program": {
+    "pid": "VRFCBePmGTpZ234BhbzNNzmyg39Rgdd6VgdfhHwKypU",
+    "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+    "executable": true,
+    "programdata": "7mzfTTbQ4h7S9uNFdzbVUCs7srF6hiLa52y4eotkp1MD",
+    "last_deploy_slot": 353884391,
+    "upgrade_authority": "9ZTHWWZDpB36UFe1vszf2KEpt83vwi27jDqtHQ7NSXyR"
+  },
+  "switchboard_ondemand_mainnet_program": {
+    "pid": "SBondMDrcV3K4kxZR1HNVT7osZxAHVHgYXL5Ze1oMUv",
+    "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+    "executable": true,
+    "programdata": "EW3AZYxoQrYWBvTmrCmiDpm6oBCNpAqN2kekDjuYFmsB",
+    "last_deploy_slot": 420822344,
+    "upgrade_authority": "DREcTwxxuehtUVgnGwDpTcKT9zTK5uDmdLbnRY7cijEx"
+  },
+  "orao_devnet_network_state": {
+    "account": "5ER1oENnV4srxYdAynUfRzWeQCPQaqMiAp4VqyMbSqnK",
+    "authority": "9ZTHWWZDpB36UFe1vszf2KEpt83vwi27jDqtHQ7NSXyR",
+    "treasury": "9ZTHWWZDpB36UFe1vszf2KEpt83vwi27jDqtHQ7NSXyR",
+    "request_fee_lamports": 300000,
+    "fulfillment_authorities": [
+      "9ZTHWWZDpB36UFe1vszf2KEpt83vwi27jDqtHQ7NSXyR",
+      "2VYNr8yMma4KkJLFNiipUxQYbg1fsyao2H6YQfZ1H2Xi",
+      "A9iZdgYabRLeAFEwss72eQr8wWQfZ6hLRmDLtWyxKvKj",
+      "HSCqQaDHGNc2kdPD2NTUKi3S953WZEJCnbrF4RHoxGjz"
+    ],
+    "token_fee_config": null,
+    "num_received": 266693
+  },
+  "orao_devnet_program": {
+    "pid": "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y",
+    "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+    "executable": true,
+    "programdata": "91JpgS1vZUPczygkLgNQQL7tzAWUvc7M7HHVEzi8LoPV",
+    "last_deploy_slot": 304555868,
+    "upgrade_authority": "2V28D3jzn7XEuKSqVVzDyXB3YMg8mfWE9QVvvkNvxEWw"
+  },
+  "switchboard_ondemand_devnet_program": {
+    "pid": "Aio4gaXjXzJNVLtzwtNVmSqGKpANtXhybbkhtAC94ji2",
+    "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+    "executable": true,
+    "programdata": "3pSJGh38VJuy7a7tsWiKi7zdiajGWwvU78kapgfu1Shr",
+    "last_deploy_slot": 455931601,
+    "upgrade_authority": "2KgowxogBrGqRcgXQEmqFvC3PGtCu66qERNJevYW8Ajh"
+  },
+  "switchboard_mainnet_default_queue": {
+    "pubkey": "A43DyUGA7s8eXPxqEjJY6EBu1KKbNgfxF8h17VAHn13w",
+    "exists": true,
+    "owner": "SBondMDrcV3K4kxZR1HNVT7osZxAHVHgYXL5Ze1oMUv",
+    "dataLen": 6280
+  }
+}

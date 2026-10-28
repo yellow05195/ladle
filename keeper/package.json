@@ -1,0 +1,21 @@
+{
+  "name": "@pulled/keeper",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Permissionless, bountied keeper for PULLED markets: opens, seals, requests VRF, fulfills, tallies, settles and refunds windows.",
+  "bin": { "pulled-keeper": "./src/index.ts" },
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@pulled/sdk": "workspace:*",
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.98.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

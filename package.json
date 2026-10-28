@@ -1,0 +1,30 @@
+{
+  "name": "pulled",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "sim:g3": "node --experimental-strip-types sim/src/g3.ts",
+    "sim:g4": "node --experimental-strip-types sim/src/g4.ts",
+    "test:props": "node --experimental-strip-types tests/props/run.ts",
+    "test:words": "node --experimental-strip-types tests/forbidden-words.ts",
+    "test:idl": "node --experimental-strip-types tests/idl-authority.ts",
+    "test:all": "pnpm test:words && pnpm test:props && pnpm test:idl && pnpm test:idl-sdk && pnpm test:sdk && pnpm test:indexer && pnpm test:chat",
+    "test:idl-sdk": "node --experimental-strip-types tests/idl-sdk-consistency.ts",
+    "idl:assemble": "node scripts/assemble-idl.mjs",
+    "test:sdk": "node --test \"sdk/test/**/*.test.ts\"",
+    "test:indexer": "node --test \"indexer/test/**/*.test.ts\"",
+    "test:anchor": "pnpm --filter @pulled/tests test:anchor",
+    "typecheck": "pnpm -r exec tsc --noEmit -p .",
+    "keeper": "node --experimental-strip-types keeper/src/index.ts",
+    "chat": "node --experimental-strip-types chat/src/index.ts",
+    "test:chat": "node --test \"chat/test/**/*.test.ts\"",
+    "bench:cu": "cargo run --release --manifest-path tests/cu-bench/Cargo.toml -- target/deploy/ladle.so owner 1,2,50,100,500,2048 20,28"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/node": "^24.0.0"
+  }
+}

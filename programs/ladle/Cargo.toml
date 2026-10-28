@@ -1,0 +1,29 @@
+[package]
+name = "ladle"
+version = "0.1.0"
+description = "Ladle: windowed, VRF-split bonding-curve launches on Solana"
+edition = "2021"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "ladle"
+
+[features]
+# no-log-ix-name: drop Anchor's "Instruction: X" log line (program bytes and
+# compute units; explorers name instructions from the IDL).
+default = ["no-log-ix-name"]
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "=1.2.0"
+anchor-spl = "=1.2.0"
+# 256-bit arithmetic for the settlement law (law.rs).
+uint = { version = "0.10", default-features = false }
+# sha256 for roll derivation. On the SBF target this is the syscall; on the host
+# (cargo test) it needs the `sha2` feature.
+solana-sha256-hasher = { version = "3", features = ["sha2"] }

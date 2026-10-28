@@ -1,0 +1,28 @@
+[toolchain]
+anchor_version = "1.2.0"
+
+[features]
+resolution = true
+skip-lint = false
+
+# Placeholder program id. Replace with the deploy keypair's pubkey
+# (target/deploy/ladle-keypair.json) and update `declare_id!` in
+# programs/ladle/src/lib.rs before the first deploy.
+[programs.localnet]
+ladle = "85ig2nch9XBAeGbdhj613vipBufxsw1eWH4Eyw7QbgFj"
+
+[programs.devnet]
+ladle = "85ig2nch9XBAeGbdhj613vipBufxsw1eWH4Eyw7QbgFj"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "pnpm test:all && pnpm test:anchor"
+
+[workspace]
+members = ["programs/ladle"]

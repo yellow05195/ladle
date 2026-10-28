@@ -1,0 +1,20 @@
+{
+  "name": "@pulled/indexer",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "AMM-level volume indexer for PULLED tokens. Counts pool legs once by (signature, outer, inner) and never aggregator route instructions.",
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@pulled/sdk": "workspace:*",
+    "@solana/web3.js": "^1.98.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

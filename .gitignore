@@ -1,0 +1,24 @@
+node_modules/
+target/
+.anchor/
+.next/
+dist/
+*.log
+research/data/*.tmp
+
+# v20: raw downloads and raw Higgsfield outputs (91 MB), kept out of public/
+app/.assets-staging/
+
+# design captures, capture tooling and marketing work stay on the local machine (several GB)
+app/screenshots/
+marketing/
+
+# secrets and local config: never in the repo
+.env
+.env.*
+*.keypair.json
+*-keypair.json
+id.json
+.vercel/
+.claude/
+idl-raw.txt

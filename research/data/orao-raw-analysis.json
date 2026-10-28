@@ -1,0 +1,71 @@
+{
+  "requests": 314,
+  "fulfills": 941,
+  "request_tx_versions": {
+    "0": 18,
+    "1": 35,
+    "legacy": 261
+  },
+  "fulfill_tx_versions": {
+    "legacy": 941
+  },
+  "requests_via_cpi": 297,
+  "request_kinds": {
+    "request_v2": 314
+  },
+  "fulfill_kinds": {
+    "fulfill_v2": 941
+  },
+  "randomness_account_lamports_after_request": {
+    "n": 314,
+    "min": 4455160,
+    "max": 4455160,
+    "median": 4455160,
+    "p90": 4455160,
+    "p95": 4455160,
+    "p99": 4455160,
+    "mean": 4455160
+  },
+  "request_tx_fee_lamports": {
+    "n": 314,
+    "min": 5000,
+    "max": 20000,
+    "median": 5000,
+    "p90": 20000,
+    "p95": 20000,
+    "p99": 20000,
+    "mean": 7045.458598726114
+  },
+  "fulfill_tx_fee_lamports": {
+    "n": 941,
+    "min": 10000,
+    "max": 15000,
+    "median": 10000,
+    "p90": 10000,
+    "p95": 10000,
+    "p99": 10000,
+    "mean": 10042.50797024442
+  },
+  "distinct_fulfill_payers": [
+    "A9iZdgYabRLeAFEwss72eQr8wWQfZ6hLRmDLtWyxKvKj",
+    "9ZTHWWZDpB36UFe1vszf2KEpt83vwi27jDqtHQ7NSXyR",
+    "2VYNr8yMma4KkJLFNiipUxQYbg1fsyao2H6YQfZ1H2Xi"
+  ],
+  "fulfill_payer_counts": {
+    "A9iZdgYabRLeAFEwss72eQr8wWQfZ6hLRmDLtWyxKvKj": 314,
+    "9ZTHWWZDpB36UFe1vszf2KEpt83vwi27jDqtHQ7NSXyR": 313,
+    "2VYNr8yMma4KkJLFNiipUxQYbg1fsyao2H6YQfZ1H2Xi": 314
+  },
+  "sample_fulfill_logs": [
+    [
+      "Program log: Instruction: FulfillV2",
+      "Program data: LApO/KhSzt9tr1aZP45cEzwosnkZIOIaXpLKWRDew8MjXwdNRImhLIf00uYYeYzAv6z+sGQkcXnB7BI3ZPbHhoWaLJ4G/5SysgBiLnmbOtAokhIEVVlEYnRqrp6N/m/yc6cj98haClfPtS+ybGmqkOXpfq/jqpgbnyQstj7ZW2KXyIv1jlaQDA==",
+      "Program data: g/XI/AAukC1tr1aZP45cEzwosnkZIOIaXpLKWRDew8MjXwdNRImhLLGKovk8OdiyNK3UPWv8O3oQX5iy+BW3RWoSDpIGcXUmzaN3VOev17VG5Xm4kMACn4WJXnQ50vFp/d6JhU2lMgE="
+    ],
+    [
+      "Program log: Instruction: FulfillV2",
+      "Program data: LApO/KhSzt8BD8WWBbFPfL2Wq3jepmtF6mvF8elyylfuAseqwIFJAX8tzSqkJaJKvw2P4Stgqo9HaDcND9mcc4rv5vIVDwO488Hf4sZRZG2+kHsoXUuo516zH79GeNoy0qgZBYiNKoBwc3eSd/oEgB71KgFQl/v4i3tlz9DpnKwMDkbCxu3DDQ=="
+    ]
+  ],
+  "distinct_request_payers": 18
+}

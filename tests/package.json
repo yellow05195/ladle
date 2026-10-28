@@ -1,0 +1,21 @@
+{
+  "name": "@pulled/tests",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test:anchor": "mocha --node-option=experimental-strip-types --timeout 1800000 --exit \"anchor/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@pulled/sdk": "workspace:*",
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.98.0"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^24.0.0",
+    "mocha": "^11.7.0",
+    "typescript": "^5.9.0"
+  }
+}
