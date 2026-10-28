@@ -1843,6 +1843,15 @@ The user's ask (French, gist): when you scroll, the camera that shows the game o
 
 **Measured** (RTX 4070 SUPER, 1280 x 800, DPR 1 to 1.5, scrolling top to bottom at 750 px/s): dev build, 50 players and 40 watchers: frame p50 4.2 ms, p95 9.5 ms, p99 15.5 ms, 0.3 % of frames over 16.7 ms; with the CPU throttled 4x (a mid laptop's cores), dev: p50 13.6 ms, p95 50 ms; production build (default demo crowd), 4x CPU: p50 8.4 ms, p95 20.8 ms, 5 % of frames over 16.7 ms, one long task (71 ms) in 13 s.
 
+**State after the v21 fix rounds** (this replaces the lines above where they differ; `tour.ts` is the source of truth for the keys):
+- Holds: the camera holds for 7 % of each segment, not 14 %. It is capped at 6 m/s along the path, with a 0.45 s smoothing. On portrait screens a stop holds until the caption's last line clears the rail (`tourAt` with measured holds).
+- Flights: a lag of more than 1.6 stops is one flight at once. A lag of more than 0.9 stops becomes a flight when the page has stopped scrolling for 250 ms, or after 40 ms at the very top or bottom. The side index and the Home and End keys set `tourBus.dest`, so the camera flies straight there; a fling's flight follows the live target at a capped pace. Name tags stay hidden until the camera is back on the first screen with no flight under way. Flights rise over the crowd and go round the drum (`check-path.mjs` checks every stop pair).
+- Framings: stop 1 shows the drum front-on between its uprights; stop 2 is high over the front left, with the whole felt ring, the stands and the drum in view; stop 3 puts the ladle in the upper third, about 30° off front-on, over the cage; stop 4 sits 1.6 m from the front left, the ticker reading in the left half and curving away before the caption; stop 5 is at least 2.9 m above the felt. The tour now goes round the right side, behind the stage and down the left.
+- Captions: on desktop a fixed side scrim (`TourScrim` in `Chapters.tsx`) fades in on the side that has a caption, shaped like the first screen's; on portrait each caption has its own full-width ground at 0.9. Caption rows fade out one by one as they rise toward the top bar (scroll-driven animation, with a script fallback). The type is Figtree (v21.1), not Fraunces.
+- Lights: exposure rises by 0.04 (not 0.12) away from the first screen, and the door lamps dim 30 % while the fill comes up.
+- Warm-up: `HallWorld.tsx` compiles every material once the room is lit and draws the room once from each stop and halfway along each leg, so no shader compiles while scrolling; the shader error check is off in production.
+- Sections: on landscape the curve and books chapters are 170vh tall (the others 140vh), because the curve to books leg (about 14 m) is the longest; the chapters' history reads run when the browser is idle, never on the scroll frame.
+
 ## v21.1 - type and UI from the wordmark
 
 **En bref.** La salle 3D, la visite caméra, la structure des écrans, le logo et la palette ne changent pas. On remplace l'écriture et l'habit de l'interface par un système né des lettres du logo « ladle ». Il n'y a plus qu'une famille, Figtree : en 900 avec la variante ss01, son a, son l, son d et son e sont ceux du logo. Fraunces, l'italique, les capitales espacées, les filets laiton, le ticket à encoches et l'étiquette bordeaux pendue disparaissent. L'interface est faite de plaques pleines et sombres sans bordure, avec des coins tirés du logo. La crème marque ce qui est à toi, la tomate la seule action de l'écran, et le safran ne sert qu'à la balle. Dans le chat, chaque joueur a le portrait de son animal, et la maison parle sous le nom « Ladle » avec la louche pour portrait. On parle et on tape des commandes dans le même champ. Le reste de cette section est en anglais, pour les agents qui construisent.
@@ -2274,7 +2283,7 @@ Under 760 px of height, items 2 and 3 become one `.fine` line over the stem, as 
 - **Beeswarm**: 6 px `--ink` circles at 85 % opacity, all identical; ×1 is a 2 px `--ink-4` line labelled "pro-rata".
 - **24 h bars**: filled `--ink-3` bars, 10 wide, radius 3.
 
-**7.20 Questions** (`fx/Faq.tsx`, `<details>`): each is a `--ground-2` plate (`--r-key`), 8 px apart, padding 18 22. The summary is `.title` 19 with, at the right, a 28 px `--ground-3` circle holding a 2 px chevron that turns 180° in 240 ms. The answer is `.body` 16.
+**7.20 Questions** (`fx/Faq.tsx`, `<details>`): rows, not plates (fix round 2). Each question is a `.title` 19 row straight on its ground, 18-20 px apart, with a bare 2 px chevron in `--ink-3` at the right (no circle) that turns 180° in 240 ms. Only the open question sits on one `--ground-3` band, its answer (`.body` 16) indented under it. The home shows five questions, the risks first, then "All questions →" to `/about#questions`, which lists all ten.
 
 **7.21 Reason lines and feedback**:
 - **Reason line**: `.ui` 15 `--ink-2`, no italic, directly under the disabled or failed action, `aria-live="polite"`. A blocking error ("That name is taken.", "Your wallet declined. Nothing was sent.") is `--ink`.
@@ -2347,7 +2356,8 @@ Calm and physical. The 3D does the showing, and no UI animation loops.
   - the typeahead fades over 120 ms (no slide);
   - the send circle fills over 120 ms.
 - **Figures**: `RollingFigure` stays, with these changes:
-  - the dial and other figures that tick often use the fade mode on the changed digit only (`translateY(.15em) → 0` + opacity .35 → 1, 120 ms);
+  - the dial (the countdown, on /play, the phone round band and the home) **swaps**, with no per-tick motion (fix r2): slots tick about every 217 ms, and a per-digit fade made the biggest figure on screen blink 4 to 5 times a second. Tabular figures hold it still; the progress stem carries the motion. Any figure that ticks more often than every 400 ms swaps; the fade mode (`translateY(.15em) → 0` + opacity .8 → 1, 80 ms, never the units digit alone) is only for slower figures;
+  - the stem's fill glides forward (400 ms linear per tick) and jumps, with no transition, when a new round starts, so the ball never runs backward;
   - pot and player changes use the roll (240 ms, 20 ms stagger right to left);
   - with tnum, the `--digit-w` measurement is constant and may stay;
   - never a count-up.

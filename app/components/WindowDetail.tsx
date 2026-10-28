@@ -17,7 +17,6 @@
  */
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BRAND } from "../../config/brand";
 import { playerColor } from "../lib/colors";
 import { useI18n } from "../i18n/client";
 import { DATA_SOURCE, getDataSource } from "../lib/data";
@@ -25,11 +24,11 @@ import { pseudonym } from "../lib/data/mock";
 import { DEMO_CAP_BPS, DEMO_HOST_FEE_BPS, DEMO_MINT, FIRST_WINDOW, WINDOW_MS, plan } from "../lib/data/demo-plan";
 import { Ledger } from "../lib/data/momentum";
 import type { WindowView } from "../lib/data/types";
-import { formatInt, toHex } from "../lib/format";
+import { formatInt, formatSol, toHex } from "../lib/format";
 import { explorerAddress, explorerTx, GITHUB_LAW } from "../lib/links";
 import { slotMs } from "../lib/measurements";
 import { settle, multiplierOf, splitFees } from "../lib/law-settle";
-import { ladle, mult, roundNum, sol3 } from "./hall/fmt";
+import { ladle, mult, roundNum, sol3, sumDecimals } from "./hall/fmt";
 import { ShareDialog } from "./hall/hud/ShareDialog";
 import { HIcon } from "./ui/icons";
 import { RecentWindows } from "./RecentWindows";
@@ -169,6 +168,11 @@ export function WindowDetail({ id }: { id: string }) {
   const n = roundNum(w.id);
   const fees = splitFees(w.total, w.hostFeeBps);
   const bounty = w.total - fees.toCurve - fees.platform - fees.host;
+  // the sum line adds up on screen (verify pass): as many decimals as the parts need
+  const sumDec = sumDecimals(w.total, [fees.toCurve, fees.platform, fees.host, bounty > 0n ? bounty : 0n]);
+  const solX = (v: bigint) => formatSol(v, sumDec);
+  // a round of one entry settles with no VRF request (chain v21: zero seed, the entry takes the whole buy)
+  const noDraw = !w.vrfAccount;
   const sumShares = w.entries.reduce((a, e) => a + e.share, 0n);
   const min = Math.min(...rows.map((r) => r.m)), max = Math.max(...rows.map((r) => r.m));
   const slotsAgo = Math.max(0, Math.round((now - Date.parse(w.closedAt)) / SLOT.value.ms));
@@ -177,7 +181,7 @@ export function WindowDetail({ id }: { id: string }) {
 
   return (
     <>
-      <PageHead label={P.win.label} title={<><span className="pg-ln">Round No. {n}</span> <span className="pg-ln">{fill(P.win.served, { date: day(w.closedAt) })}</span></>} lede={t("h.win.lead")}>
+      <PageHead label={P.win.label} title={<><span className="pg-ln">Round No. {n}</span> <span className="pg-ln">{fill(P.win.served, { date: day(w.closedAt).replace(/ /g, "\u00A0") })}</span></>} lede={t("h.win.lead")}>
         {rebuilt ? <p className="fine">{P.win.rebuilt}</p> : null}
       </PageHead>
 
@@ -190,14 +194,14 @@ export function WindowDetail({ id }: { id: string }) {
               { k: P.win.pot, v: <>{sol3(w.total)}<span className="unit">SOL</span></> },
               { k: P.win.entries, v: <>{w.entries.length}</> },
               { k: P.win.bought, v: <>{ladle(w.tokensOut)}<span className="unit">LADLE</span></> },
-              { k: P.win.seed, v: (
+              { k: P.win.seed, v: noDraw ? <span className="ui">{t("h.rcp.noDraw")}</span> : (
                 <span className="pg-seed-row">
                   <span className="seed">{seedGroups(w.seedHex, 4, 2)}</span>
                   <button type="button" className="icon-btn round" aria-label={P.win.copy} onClick={copySeed}><HIcon name={copied ? "check" : "copy"} size={18} /></button>
                   {copied ? <span className="label" role="status">{P.win.copied}</span> : null}
                 </span>
               ) },
-              { k: t("h.rcp.vrf"), v: <a className="pg-a seed" href={explorerAddress(w.vrfAccount)} target="_blank" rel="noreferrer">{w.vrfAccount.slice(0, 4)} {w.vrfAccount.slice(4, 8)} … {w.vrfAccount.slice(-4)}<Arr c="↗" /></a> },
+              { k: t("h.rcp.vrf"), v: noDraw ? <span className="ui">{t("h.rcp.vrfNone")}</span> : <a className="pg-a seed" href={explorerAddress(w.vrfAccount)} target="_blank" rel="noreferrer">{w.vrfAccount.slice(0, 4)} {w.vrfAccount.slice(4, 8)} … {w.vrfAccount.slice(-4)}<Arr c="↗" /></a> },
               { k: t("h.rcp.tx"), v: <a className="pg-a seed" href={explorerTx(w.settleTx)} target="_blank" rel="noreferrer">{w.settleTx.slice(0, 4)} {w.settleTx.slice(4, 8)} … {w.settleTx.slice(-4)}<Arr c="↗" /></a> },
             ]} />
             <DemoNote />
@@ -207,7 +211,7 @@ export function WindowDetail({ id }: { id: string }) {
               <button type="button" className={`key main ${busy ? "busy" : ""}`} onClick={recompute} aria-busy={busy || undefined}>
                 {busy ? P.win.running : P.win.run}
               </button>
-              <p className="fine">{P.win.runNote} <a className="pg-a" href={GITHUB_LAW} target="_blank" rel="noreferrer">law.ts<Arr c="↗" /></a></p>
+              <p className="fine">{P.win.runNote} <a className="pg-a nw" href={GITHUB_LAW} target="_blank" rel="noreferrer">law.ts<Arr c="↗" /></a></p>
             </div>
             <div aria-live="polite" className="pg-verdict">
               {run.k === "done" ? (run.ok
@@ -241,9 +245,8 @@ export function WindowDetail({ id }: { id: string }) {
               </TableWrap>
               <p className="pg-range">{t("h.res.range", { min: mult(min), max: mult(max) })}</p>
               <p className="fine">
-                {t("h.res.sum1", { total: sol3(w.total), toCurve: sol3(fees.toCurve), fee: sol3(fees.platform) })}{fees.host > 0n ? t("h.res.sumHost", { host: sol3(fees.host) }) : ""}{bounty > 0n ? t("h.res.sumBounty", { bounty: sol3(bounty) }) : ""}. {t("h.res.sum2", { tokens: ladle(sumShares) })}
+                {t("h.res.sum1", { total: solX(w.total), toCurve: solX(fees.toCurve), fee: solX(fees.platform) })}{fees.host > 0n ? t("h.res.sumHost", { host: solX(fees.host) }) : ""}{bounty > 0n ? t("h.res.sumBounty", { bounty: solX(bounty) }) : ""}. {t("h.res.sum2", { tokens: ladle(sumShares) })}
               </p>
-              <p className="ui">{BRAND.secondLine}</p>
               <div><button type="button" className="key sec s" onClick={() => setShare(true)}>{fill(P.win.share, { n })}</button></div>
             </div>
           </div>
@@ -255,7 +258,7 @@ export function WindowDetail({ id }: { id: string }) {
         <RecentWindows limit={8} current={w.id} />
       </Sec>
 
-      {share ? <ShareDialog n={n} id={w.id} players={w.entries.length} tiles={rows.map((r) => ({ name: r.name, m: r.m, mine: false }))} mine={null} seed8={w.seedHex.slice(0, 8)} demo={w.source === "demo"} onClose={() => setShare(false)} /> : null}
+      {share ? <ShareDialog n={n} id={w.id} players={w.entries.length} tiles={rows.map((r) => ({ name: r.name, m: r.m, mine: false }))} mine={null} seed8={noDraw ? "" : w.seedHex.slice(0, 8)} demo={w.source === "demo"} onClose={() => setShare(false)} /> : null}
     </>
   );
 }

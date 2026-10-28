@@ -35,7 +35,7 @@ export const BRAND = {
     /** one colour, fill = currentColor (inline it to colour it with CSS) */
     markMono: "/brand/ladle-mark-mono.svg",
     wordmarkMono: "/brand/ladle-wordmark-mono.svg",
-    /** the word over the tagline (Fraunces Black, as paths), for dark / light grounds */
+    /** the word over the tagline (Figtree 900, as paths), for dark / light grounds */
     lockup: "/brand/ladle-lockup.svg",
     lockupDark: "/brand/ladle-lockup-dark.svg",
     markPng: "/brand/ladle-mark-1024.png",
@@ -44,6 +44,7 @@ export const BRAND = {
     avatarSmall: "/brand/ladle-avatar-400.png",
     avatarTomato: "/brand/ladle-avatar-tomato-1000.png",
     avatarBrass: "/brand/ladle-avatar-brass-1000.png",
+    /** the app tile: cream ladle, saffron ball, on charcoal (the same as app/apple-icon.png) */
     appIcon: "/brand/ladle-app-icon-1024.png",
     banner: "/brand/ladle-banner-1500x500.png",
     og: "/og.png",
@@ -62,8 +63,8 @@ export const BRAND = {
     /** the one action on screen; tomato is the tile and stickers */
     lacquer: "#B8432A",
   },
-  /** v21: two families, nothing else (code wells use the system monospace) */
-  type: { display: "Fraunces", text: "Schibsted Grotesk" },
+  /** v21.1: one family, Figtree (code wells use the system monospace) */
+  type: { display: "Figtree", text: "Figtree" },
   /**
    * The logo as geometry (generated, keep in sync with public/brand/ladle-geometry.json;
    * make-brand.mjs warns when they differ). `ink` is the ladle and letters, one nonzero

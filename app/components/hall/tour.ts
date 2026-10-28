@@ -65,56 +65,65 @@ const H = SHOTS.home;
 export const TOUR: TourStop[] = [
   // 0 · the first screen (the home shot; lens and framing from the first screen)
   { id: "top", desk: { pos: H.pos, look: H.look, fov: H.fov, off: 0 }, port: { pos: H.posPhone ?? H.pos, look: H.lookPhone ?? H.look, fov: H.fovPhone, off: 0 } },
-  // II · how a round plays: the drum, its cradle, the crank, the hopper and the chute, from high on the right (text left, over the dark front)
+  // II · how a round plays: the drum front-on between its two uprights, the crank at the side and the balls in the cage,
+  // the felt crowd round it (text left). r2: from the front, not the crank side (scouted, screenshots/v21/fix-tour3d-r2)
   {
     id: "how",
-    desk: { pos: [6.16, 5.3, -2.18], look: [0, 2.3, -0.1], fov: 38.4, off: 0.18 },
+    desk: { pos: [1.6, 3.4, 6.6], look: [0, 2.4, -0.2], fov: 36, off: 0.18 },
     port: { pos: [7.18, 1.65, 5.99], look: [0, 2.3, -0.1], fov: 60.5, off: 0.22 },
   },
-  // III · the room: the players on the felt, close, the bear and the stands behind them (text right, over the stage's dark rim)
+  // III · the room: high over the front left, the whole felt ring round the drum and the stands behind it, the far
+  // ring's and the stands' faces toward the lens (text right). r2: never from head height behind the crowd
   {
     id: "room",
-    desk: { pos: [0.53, 1.85, 5.7], look: [1.99, 0.84, 2.56], fov: 33.1, off: -0.17 },
-    port: { pos: [0.61, 1.75, 5.62], look: [-2.11, 0.84, 1.52], fov: 51, off: 0.11 },
-    // portrait: over the front-right booth, not through it
-    viaPort: [{ pos: [4.4, 1.95, 6.6], look: [-0.6, 1.2, 1.0] }],
+    desk: { pos: [-3.0, 5.9, 6.6], look: [0.5, 0.8, -1.0], fov: 42, off: -0.10 },
+    port: { pos: [-1.8, 6.4, 8.6], look: [0.3, 0.9, -0.8], fov: 58, off: 0.16 },
   },
-  // IV · the scoop: the ladle parked over the drum, where it comes down to serve (text left, over the dark wall)
+  // IV · the scoop: the ladle parked over the drum, turned about 30 degrees so its bowl reads, in the upper third, and the
+  // cage with its balls in the lower third (text left). r2: from the front left, the spot's can no longer a black hole
   {
     id: "scoop",
-    desk: { pos: [4.02, 6.2, 4.1], look: [0.05, 5.05, -0.16], fov: 38, off: 0.16 },
+    desk: { pos: [-3.3, 4.6, 5.7], look: [0, 4.5, -0.16], fov: 50, off: 0.15 },
     port: { pos: [0.66, 6.68, 9.22], look: [0.05, 4.6, -0.16], fov: 59.9, off: 0.18 },
   },
-  // V · the curve: the floor ticker on the stage's rim, close (text right, over the dark felt)
+  // V · the curve: the floor ticker along the front of the stage's rim, from the front left at 1.6 m, readable in the left
+  // half and curving out of view before the caption; the felt seen from above, every pet whole (text right). r2: searched
+  // (screenshots/v21/fix-tour3d-r2/solve-curve.mjs) so no rim glyph lies in the caption's box
   {
     id: "curve",
-    desk: { pos: [3.5, 1.09, 3.83], look: [0.8, 0.3, 3.5], fov: 31.7, off: -0.14 },
+    desk: { pos: [-3.5, 1.6, 7.0], look: [1.39, 0.45, 2.99], fov: 36, off: -0.10 },
     port: { pos: [3.56, 1.44, 5.57], look: [0.8, 0.3, 3.5], fov: 54.1, off: 0.2 },
   },
   // VI · open books: the bear host, the house, from above its front (text left, over the dark floor)
   {
     id: "books",
-    desk: { pos: [2.53, 2.5, 0.21], look: [4.5, 0.7, -1.0], fov: 41.8, off: 0.14 },
-    port: { pos: [2.53, 2.6, 0.21], look: [4.5, 0.7, -1.0], fov: 50, off: 0.2 },
-    // up over the stage's rim and the crowd (1.8 m over the felt), never through them
-    viaDesk: [{ pos: [3.68, 2.25, 3.72], look: [3.6, 0.7, 1.6] }, { pos: [3.6, 2.6, 2.3], look: [4.3, 0.8, -0.5] }],
-    viaPort: [{ pos: [3.68, 2.3, 4.2], look: [3.6, 0.7, 1.6] }, { pos: [3.6, 2.7, 2.3], look: [4.3, 0.8, -0.5] }],
+    desk: { pos: [2.53, 3.0, 0.21], look: [4.5, 1.0, -1.0], fov: 41.8, off: 0.14 },
+    port: { pos: [2.53, 3.0, 0.21], look: [4.5, 0.9, -1.0], fov: 50, off: 0.2 },
+    // r2: across the open front and up, outside and above the felt crowd's edge (never alongside its heads), then over the
+    // stage's rim (2.9 m and more over the felt) to the bear
+    viaDesk: [{ pos: [4.6, 3.5, 5.0], look: [3.4, 1.0, 1.0] }, { pos: [4.3, 3.3, 2.0], look: [4.4, 0.9, -0.6] }],
+    viaPort: [{ pos: [4.6, 3.5, 5.0], look: [3.4, 1.0, 1.0] }, { pos: [4.3, 3.3, 2.0], look: [4.4, 0.9, -0.6] }],
   },
   // VII · hosts: the fox bellhop at the left door, close (text right, over the dark wall and the doorway)
   {
     id: "hosts",
     desk: { pos: [-7.78, 1.53, -2.99], look: [-11.4, 0.6, -2.0], fov: 35.8, off: -0.12 },
     port: { pos: [-8.0, 2.15, 1.8], look: [-11.2, 0.8, -1.6], fov: 45.2, off: 0.24 },
-    // desktop: round the back of the stage, over the stanchions, then down the left aisle; portrait: round the open front
-    viaDesk: [{ pos: [3.0, 2.8, -3.6], look: [0.5, 1.2, -5.5] }, { pos: [-2.8, 2.8, -4.0], look: [-6.5, 1.0, -3.5] }, { pos: [-6.2, 2.3, -3.6], look: [-10.5, 0.8, -2.3] }],
-    viaPort: [{ pos: [3.0, 2.8, -3.6], look: [0.5, 1.2, -5.5] }, { pos: [-2.8, 2.8, -4.0], look: [-6.5, 1.0, -3.5] }, { pos: [-6.2, 2.4, -3.6], look: [-10.5, 0.8, -2.3] }],
+    // round the back of the stage, over the stanchions, then down the left aisle. r2: 2.9 m and more while over the felt's
+    // edge, 1.2 m and more from every head in the stands (check-path.mjs); portrait looks at the door and the fox, not the floor
+    viaDesk: [{ pos: [3.0, 3.25, -3.6], look: [0.5, 1.2, -5.5] }, { pos: [-2.8, 2.95, -4.0], look: [-6.5, 1.0, -3.5] }, { pos: [-6.5, 2.75, -3.7], look: [-10.5, 0.9, -2.3] }],
+    viaPort: [{ pos: [3.0, 3.25, -3.6], look: [0.5, 1.2, -5.5] }, { pos: [-2.8, 2.95, -4.0], look: [-11.0, 2.2, -1.6] }, { pos: [-6.5, 2.8, -3.7], look: [-11.0, 1.8, -1.8] }, { pos: [-8.0, 2.75, -1.0], look: [-11.0, 1.1, -1.7] }],
   },
   // VIII · Genesis: close on the back stands' faces and scarves (text left, over the dark stage)
   {
     id: "genesis",
     // over the back stands, the row's faces turned to the stage (and so to the lens)
     desk: { pos: [-3.3, 3.14, -6.46], look: [4.63, 1.08, -5.15], fov: 35.2, off: 0.21 },
-    port: { pos: [-3.42, 2.31, -5.26], look: [2.15, 0.9, -6.0], fov: 49, off: 0.12 },
+    port: { pos: [-3.42, 2.4, -5.26], look: [2.15, 0.9, -6.0], fov: 49, off: 0.12 },
+    // r2: up behind the stands' top tier on the way from the door (1.2 m and more from every head), turning toward the
+    // stage (never through the look's own position, which spun the view into the wall)
+    viaDesk: [{ pos: [-7.6, 3.2, -5.4], look: [-2.0, 1.6, 0.5] }],
+    viaPort: [{ pos: [-7.6, 2.9, -1.2], look: [-2.5, 1.2, -1.0] }, { pos: [-5.8, 3.0, -4.3], look: [0.5, 1.0, -3.5] }],
   },
   // IX · questions: up and out to the whole room (text left, the hall dimmed)
   {
@@ -122,6 +131,8 @@ export const TOUR: TourStop[] = [
     // desktop: from high on the right, the room across the stage, the wide caption over the dark front
     desk: { pos: [9.88, 5.59, -0.69], look: [0, 1.6, 0], fov: 42.6, off: 0.22 },
     port: { pos: [-2.6, 6.5, 10.6], look: [0, 1.5, 0], fov: 62, off: 0.12 },
+    // r2: portrait: up and round the left of the stage, outside the felt's edge, to the front
+    viaPort: [{ pos: [-5.3, 4.0, -1.2], look: [0, 1.4, -0.5] }],
   },
 ];
 
@@ -146,8 +157,20 @@ export const tourBus = {
   v: 0,
   /** 0 on the first screen, 1 once the tour has left it, eased (camera rig; the house lights read it) */
   w: 0,
+  /** r2: a flight's progress, 0 → 1; 1 when no flight is under way (camera rig; the name tags wait for it) */
+  fly: 1,
+  /**
+   * r2: where a jump the page started is going (stop units), before its smooth scroll gets there: the side index, the
+   * Home and End keys (the page); null otherwise. The rig flies straight to it instead of chasing the scroll.
+   */
+  dest: null as number | null,
+  destAt: 0,
+  /** r2: when the page last scrolled (performance.now(); the page): the rig's "the scroll has stopped" */
+  scrollAt: 0,
   /** the page's scroll y at which each stop is reached */
   anchors: [0] as number[],
+  /** r2: how far (px) the camera keeps holding each stop after reaching it (portrait: the caption's read) */
+  holds: [0] as number[],
 };
 
 /** smootherstep, 0 at 0 and 1 at 1, flat at both ends */
@@ -158,16 +181,21 @@ const ease = (u: number) => u * u * u * (u * (u * 6 - 15) + 10);
  * the first and last `dwell` of the distance (the text is read there) and
  * travels in between, eased in and out. v21 fix: a short hold (7 %), so the
  * travel spreads over most of the scroll instead of a sprint between holds.
+ * v21 fix (r2): `holds` (px, per stop) lengthens the hold after a stop: on
+ * portrait screens a caption taller than the space under the subject is read
+ * by scrolling, and the camera stays on its subject until the caption's last
+ * line has cleared the rail (never more than 60 % of the way to the next stop).
  */
-export function tourAt(y: number, anchors: number[], dwell = 0.07): number {
+export function tourAt(y: number, anchors: number[], dwell = 0.07, holds?: number[]): number {
   const n = anchors.length;
   if (n < 2 || y <= anchors[0]!) return 0;
   if (y >= anchors[n - 1]!) return n - 1;
   let i = 0;
   while (i < n - 2 && y >= anchors[i + 1]!) i++;
-  const a = anchors[i]!, b = anchors[i + 1]!;
-  const u = b > a ? (y - a) / (b - a) : 1;
-  const v = Math.min(1, Math.max(0, (u - dwell) / (1 - 2 * dwell)));
+  const a = anchors[i]!, b = anchors[i + 1]!, L = b - a;
+  if (L <= 0) return i + 1;
+  const hs = Math.min(0.6 * L, Math.max(dwell * L, holds?.[i] ?? 0)), he = dwell * L;
+  const v = Math.min(1, Math.max(0, (y - a - hs) / Math.max(1, L - hs - he)));
   return i + ease(v);
 }
 
@@ -337,5 +365,7 @@ export function samplePath(mode: TourMode, step = 0.02): V3[] {
   return out;
 }
 
-// dev captures (screenshots/v21/tour/*.mjs) read the tour state
-if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") (window as unknown as { __tour?: unknown }).__tour = tourBus;
+// dev captures (screenshots/v21/tour/*.mjs) read the tour state; r2 scouting (screenshots/v21/fix-tour3d-r2) edits the keys live
+if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+  Object.assign(window as unknown as Record<string, unknown>, { __tour: tourBus, __tourDev: { TOUR, rebuild: () => { delete built.desk; delete built.port; } } });
+}

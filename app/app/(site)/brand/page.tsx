@@ -37,7 +37,7 @@ const DOWNLOADS: Array<{ label: string; href: string }> = [
   { label: "Mark · PNG 1024", href: A.markPng },
   { label: "Lockup with the tagline · SVG", href: A.lockup },
   { label: "Lockup, for light grounds · SVG", href: A.lockupDark },
-  { label: "App icon · PNG 1024", href: A.appIcon },
+  { label: "App icon: cream ladle, saffron ball, on charcoal · PNG 1024", href: A.appIcon },
   { label: "Avatar, charcoal · PNG 1000", href: A.avatar },
   { label: "Avatar, brass · PNG 1000", href: A.avatarBrass },
   { label: "Avatar: charcoal ladle, cream ball, on tomato · PNG 1000", href: A.avatarTomato },
@@ -48,6 +48,13 @@ const DOWNLOADS: Array<{ label: string; href: string }> = [
 
 const WORD = BRAND.logo.word;
 const BALL_D = WORD.ball.r * 2;
+/** The clear-space figure: its viewBox, the measuring ball's height (level with the l's middle) and where its "1 ball" label sits, in % of the box. */
+const CLEAR_VB = { x: -BALL_D - 4, y: -BALL_D - 4, w: WORD.w + 2 * BALL_D + 8, h: WORD.h + 2 * BALL_D + 8 };
+const MEASURE_CY = 47.5;
+const CLEAR_POS = {
+  ["--lx" as string]: `${(((-WORD.ball.r - CLEAR_VB.x) / CLEAR_VB.w) * 100).toFixed(2)}%`,
+  ["--ly" as string]: `${(((MEASURE_CY + WORD.ball.r + 5 - CLEAR_VB.y) / CLEAR_VB.h) * 100).toFixed(2)}%`,
+} as CSSProperties;
 
 /** The drawn word, inline (the geometry of /brand/ladle-wordmark.svg), so a tile can misuse it on purpose. */
 function Word({ ink = "var(--ink)", ball = "var(--saffron)", className = "word", style }: { ink?: string; ball?: string; className?: string; style?: CSSProperties }) {
@@ -59,15 +66,24 @@ function Word({ ink = "var(--ink)", ball = "var(--saffron)", className = "word",
   );
 }
 
-/** One crossed-out misuse: the tile with one diagonal strike, the sentence under it. */
+/** One misuse as a row: the struck sample (120 x 64, crossed by a 3 px cream bar), then the rule. */
 function Dont({ children, text, photo = false }: { children: ReactNode; text: string; photo?: boolean }) {
   return (
     <li>
-      <div className={`tile ${photo ? "photo" : ""}`}>
-        {children}
-        <svg className="strike" viewBox="0 0 100 60" preserveAspectRatio="none" aria-hidden="true"><line x1="4" y1="56" x2="96" y2="4" stroke="var(--ink-2)" strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg>
-      </div>
-      <p className="body">{text}</p>
+      <span className={`smp ${photo ? "photo" : ""}`} aria-hidden="true">{children}</span>
+      <p className="ui">{text}</p>
+    </li>
+  );
+}
+
+/** A file to download, its name and its format apart (the format drops to its own line on phones). */
+function DlRow({ label, href, cta }: { label: string; href: string; cta: string }) {
+  const i = label.lastIndexOf(" · ");
+  const name = i < 0 ? label : label.slice(0, i), fmt = i < 0 ? "" : label.slice(i + 3);
+  return (
+    <li>
+      <span className="f"><span className="nm">{name}</span>{fmt ? <span className="fmt">{fmt}</span> : null}</span>
+      <a className="act" href={href} download>{cta}<Arr c="↓" /></a>
     </li>
   );
 }
@@ -99,13 +115,16 @@ export default function BrandPage() {
             </div>
             <p className="fine">The word, drawn from scratch: 242 × 94.3 units, x-height 56.</p>
             <figure className="pg-clear">
-              <svg viewBox={`${-BALL_D - 4} ${-BALL_D - 4} ${WORD.w + 2 * BALL_D + 8} ${WORD.h + 2 * BALL_D + 8}`} role="img" aria-label={b.clearAria}>
-                <rect x={-BALL_D} y={-BALL_D} width={WORD.w + 2 * BALL_D} height={WORD.h + 2 * BALL_D} rx={BALL_D / 2} fill="none" stroke="var(--ink-3)" strokeWidth="1.5" strokeDasharray="5 5" vectorEffect="non-scaling-stroke" />
-                <path d={WORD.ink} fill="var(--ink)" />
-                <circle cx={WORD.ball.cx} cy={WORD.ball.cy} r={WORD.ball.r} fill="var(--saffron)" />
-                <circle cx={-WORD.ball.r} cy={-WORD.ball.r} r={WORD.ball.r} fill="var(--ground-3)" />
-                <circle cx={WORD.w + WORD.ball.r} cy={WORD.h + WORD.ball.r} r={WORD.ball.r} fill="var(--ground-3)" />
-              </svg>
+              <div className="pg-clear-box" style={CLEAR_POS}>
+                <svg viewBox={`${CLEAR_VB.x} ${CLEAR_VB.y} ${CLEAR_VB.w} ${CLEAR_VB.h}`} role="img" aria-label={b.clearAria}>
+                  <rect x={-BALL_D} y={-BALL_D} width={WORD.w + 2 * BALL_D} height={WORD.h + 2 * BALL_D} rx={BALL_D / 2} fill="none" stroke="var(--ink-4)" strokeWidth="1" strokeDasharray="5 5" vectorEffect="non-scaling-stroke" />
+                  <path d={WORD.ink} fill="var(--ink)" />
+                  <circle cx={WORD.ball.cx} cy={WORD.ball.cy} r={WORD.ball.r} fill="var(--saffron)" />
+                  {/* the measure: one ball, in the gap between the dashed line and the word, touching the line */}
+                  <circle cx={-WORD.ball.r} cy={MEASURE_CY} r={WORD.ball.r} fill="var(--ground-4)" />
+                </svg>
+                <span className="fine pg-clear-lbl" aria-hidden="true">{b.clearBall}</span>
+              </div>
               <figcaption className="fine">{b.clearNote}</figcaption>
             </figure>
           </div>
@@ -217,14 +236,20 @@ export default function BrandPage() {
       </Sec>
 
       <Sec id="rules" labelledBy="dn-h">
-        <SecHead n={4} id="dn-h">{b.dontTitle}</SecHead>
-        <ol className="pg-donts">
-          <Dont text={b.donts[0]}><span className="typed" aria-hidden="true">ladle</span></Dont>
-          <Dont text={b.donts[1]}><Word ball="var(--ink-3)" /></Dont>
-          <Dont text={b.donts[2]}><Word style={{ transform: "scale(1.35, 0.72)" }} /></Dont>
-          <Dont text={b.donts[3]}><span style={{ display: "flex", alignItems: "center", gap: 2, width: "78%" }}><Word style={{ width: "74%" }} /><span className="label" style={{ color: "var(--ink-2)", lineHeight: 1.1 }}>{b.dontCrowd}</span></span></Dont>
-          <Dont text={b.donts[4]} photo><Word /></Dont>
-        </ol>
+        <div className="pg-split">
+          <div className="c4 pg-col">
+            <SecHead n={4} id="dn-h">{b.dontTitle}</SecHead>
+          </div>
+          <div className="c8 pg-col pg-col-r">
+            <ul className="pg-donts">
+              <Dont text={b.donts[0]}><span className="typed">ladle</span></Dont>
+              <Dont text={b.donts[1]}><Word ball="var(--ink-3)" /></Dont>
+              <Dont text={b.donts[2]}><Word style={{ transform: "scale(1.35, 0.72)" }} /></Dont>
+              <Dont text={b.donts[3]}><span className="crowd"><Word /><span className="new">{b.dontCrowd}</span></span></Dont>
+              <Dont text={b.donts[4]} photo><Word /></Dont>
+            </ul>
+          </div>
+        </div>
       </Sec>
 
       <Sec id="characters" labelledBy="ch-h">
@@ -257,7 +282,7 @@ export default function BrandPage() {
           </div>
           <div className="c8 pg-col pg-col-r">
             <ul className="pg-dl-rows">
-              {DOWNLOADS.map((d) => <li key={d.href}><span className="f">{d.label}</span><a className="act" href={d.href} download>{b.download}<Arr c="↓" /></a></li>)}
+              {DOWNLOADS.map((d) => <DlRow key={d.href} label={d.label} href={d.href} cta={b.download} />)}
             </ul>
           </div>
         </div>

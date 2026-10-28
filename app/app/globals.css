@@ -218,7 +218,8 @@
 .act.bare:hover, .act.bare[aria-current="page"] { color: var(--ink); }
 .act[aria-disabled="true"], .act:disabled { color: var(--ink-4); cursor: not-allowed; }
 .acts-row { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
-@media (pointer: coarse) { .act, .link { position: relative; } .act::after, .link::after { content: ""; position: absolute; left: -6px; right: -6px; top: 50%; height: 44px; transform: translateY(-50%); } }
+/* touch: the link's own box reaches 44 px (padding, cancelled by the same negative margin, so nothing moves) */
+@media (pointer: coarse) { .act, .link { position: relative; padding-block: 12px; margin-block: -12px; } .act.sm, .link.sm { padding-block: 14px; margin-block: -14px; } .act::after, .link::after { content: ""; position: absolute; left: -6px; right: -6px; top: 50%; height: 44px; transform: translateY(-50%); } }
 
 /* ------------------------------ the well (§7.3): anything you type into ------------------------------ */
 
@@ -280,11 +281,12 @@
 .rfig-strip { position: absolute; left: -0.12em; right: -0.12em; top: 0; display: flex; flex-direction: column; transition: transform 240ms var(--ease-out); }
 .rfig-strip > span { display: block; height: 1em; line-height: 1; }
 .rfig-ch { display: inline-block; }
-/* fade: the changed digit is swapped and rises into place, 120 ms (figures that tick several times a second) */
+/* fade: the changed digit is swapped and settles in 80 ms from a barely dimmed start; only for figures that change
+   less often than every 400 ms (the countdown swaps with no motion at all: fix r2, §9) */
 .rfig-fcol { display: inline-block; position: relative; }
 .rfig-f { position: absolute; left: -0.2em; right: -0.2em; top: 0; text-align: center; }
-.rfig-f.in { animation: rfig-in 120ms var(--ease-out) both; }
-@keyframes rfig-in { from { opacity: 0.35; transform: translateY(0.15em); } }
+.rfig-f.in { animation: rfig-in 80ms var(--ease-out) both; }
+@keyframes rfig-in { from { opacity: 0.8; transform: translateY(0.15em); } }
 .roll-digits { display: inline-flex; }
 
 /* ------------------------------ section frame (inner pages; no rule) ------------------------------ */

@@ -13,11 +13,24 @@ import { BRAND } from "../../../config/brand";
  * elapsed / total whose leading end is the saffron ball, the stem own
  * diameter; with nothing elapsed only the ball shows. Same progressbar role.
  */
-export function Stem({ elapsed, total = 92, thin = false, label = "Slots elapsed", className = "" }: { elapsed: number; total?: number; thin?: boolean; label?: string; className?: string }) {
+export function Stem({ elapsed, total = 92, thin = false, label = "Slots elapsed", className = "", instant = false }: { elapsed: number; total?: number; thin?: boolean; label?: string; className?: string; /** no width transition at all (the loader: the counter beside it must agree with it every frame) */ instant?: boolean }) {
   const lit = Math.max(0, Math.min(total, Math.round(elapsed)));
+  const fill = useRef<HTMLElement>(null);
+  const prev = useRef(lit);
+  // forward ticks glide (400 ms linear); a new round (the fill shrinks) jumps, so the ball never runs backward
+  useLayoutEffect(() => {
+    const el = fill.current;
+    const back = lit < prev.current;
+    prev.current = lit;
+    if (!el || instant || !back) return;
+    el.style.transition = "none";
+    void el.offsetWidth;
+    const id = requestAnimationFrame(() => { el.style.transition = ""; });
+    return () => cancelAnimationFrame(id);
+  }, [lit, instant]);
   return (
     <div className={`stem ${thin ? "thin" : ""} ${className}`} role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={lit} aria-label={label}>
-      <i style={{ width: `${(100 * lit) / Math.max(1, total)}%` }} />
+      <i ref={fill} style={{ width: `${(100 * lit) / Math.max(1, total)}%`, ...(instant ? { transition: "none" } : null) }} />
     </div>
   );
 }
@@ -72,9 +85,11 @@ export type FigureMode = "roll" | "fade" | "swap";
  *   follows the rhythm of the value (at most 180 ms, at most half the time
  *   since the last change), so the figure rests more than it moves;
  * - "fade": the changed digit is swapped and rises into place in 120 ms
- *   from a dim start (no second glyph ever overlaps it), for figures that
- *   tick several times a second (the countdown);
- * - "swap": plain text, no motion.
+ *   from a dim start (no second glyph ever overlaps it); kept for figures that
+ *   change at most a couple of times a second;
+ * - "swap": plain text, no motion: the countdown (it ticks about 4 times a
+ *   second; tabular figures hold it still and the progress stem carries the
+ *   motion, so the biggest figure on screen never blinks).
  * The value is read from an sr-only span.
  */
 export function RollingFigure({ text, className = "", mode = "roll" }: { text: string; className?: string; mode?: FigureMode }) {

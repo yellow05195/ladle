@@ -475,8 +475,9 @@ Commands (fontTools 4.66.1, `py -I`; brotli is not installed, so the output is W
 |---|---:|---|
 | `public/fonts/figtree-latin.woff` | 24,740 | wght 400-900; GSUB `case dnom frac locl numr pnum rvrn ss01 ss02 tnum`; loaded by next/font/local in `app/layout.tsx` (`--font-figtree`); also registered with FontFace for the share card |
 | `scripts/fonts/figtree-400-900.ttf` | 63,132 | generators |
+| `scripts/fonts/figtree-500.ttf`, `figtree-600.ttf`, `figtree-900.ttf` | 40,120 / 40,124 / 40,060 | static instances for opentype.js (it cannot pick a weight of a variable font): `py -I -m fontTools.varLib.instancer figtree-400-900.ttf wght=900 -o figtree-900.ttf`, and the same at 500 and 600 (restyle fix r2, 2026-10-28). Read by `scripts/brand-lib.mjs` as the faces `display`, `text` and `textSemi`: the OG card (make-og) and, since the verify pass, the lockup and banner taglines (make-brand) |
 
-First-load font bytes: 24,740 (one file). The three v21 web fonts (`fraunces-roman-latin.woff`, `fraunces-italic-latin.woff`, `schibsted-latin.woff`) left `public/fonts/`: they were moved, not destroyed, to `app/scripts/fonts/v21-retired/` (delete that folder when nothing needs them). The Fraunces and Schibsted TTFs in `app/scripts/fonts/` stay while `scripts/brand-lib.mjs` still reads them.
+First-load font bytes: 24,740 (one file). The three v21 web fonts (`fraunces-roman-latin.woff`, `fraunces-italic-latin.woff`, `schibsted-latin.woff`) left `public/fonts/`: they were moved, not destroyed, to `app/scripts/fonts/v21-retired/` (delete that folder when nothing needs them). The Fraunces and Schibsted TTFs in `app/scripts/fonts/` are no longer read by any generator (make-brand and make-og use the Figtree static instances since the v21 verify pass); `brand-lib.mjs` still lists them as the faces `serif`, `medium` and `semibold`, so they can go once those entries are removed.
 
 Pet portrait thumbs: `public/assets/pets/thumb/<species>-<scarf>.webp`, 72 files of 64 x 64 (WebP q 80, cover, focus 50 % 30 %), made from the 256 px portraits by `scripts/make-pet-thumbs.mjs` (sharp). Used by the chat discs, the presence stack, the player plate and the species tiles.
 

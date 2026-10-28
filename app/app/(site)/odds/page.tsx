@@ -13,7 +13,8 @@ export const metadata: Metadata = { title: "Odds" };
 
 /**
  * /odds (v21.1, §7.23, mockup s7): the page head; the law's three clauses
- * as plates beside the page's one cream plate, the plain-words summary;
+ * as plates (the page opens on them, with no section disc above their own
+ * cream discs) beside the page's one cream plate, the plain-words summary;
  * every past scoop as a beeswarm with the smallest and the largest at the
  * same size; the practice simulator; the measured deciles on a zebra
  * table; the words we use. Measured, never promised; no result is ever
@@ -37,10 +38,10 @@ export default async function OddsPage() {
       <Sec id="law" labelledBy="law-h">
         <div className="pg-split">
           <div className="c7 pg-col">
-            <SecHead n={1} id="law-h">{o.lawTitle}</SecHead>
-            <Steps rows={clauses.map((b, i) => ({ t: o.clauses[i]!, b }))} />
+            <h2 id="law-h" className="sr-only">{o.lawTitle}</h2>
+            <Steps cream rows={clauses.map((b, i) => ({ t: o.clauses[i]!, b }))} />
           </div>
-          <div className="c5 pg-col pg-col-r">
+          <div className="c5 pg-col">
             <div className="plate-cream pg-cream">
               <span className="label">{o.summaryLabel}</span>
               <p>{o.summary}</p>
@@ -51,7 +52,7 @@ export default async function OddsPage() {
       </Sec>
 
       <Sec id="past" labelledBy="past-h">
-        <SecHead n={2} id="past-h">{o.swarmTitle}</SecHead>
+        <SecHead n={1} id="past-h">{o.swarmTitle}</SecHead>
         <div className="plate pg-chart">
           <PastDistribution />
         </div>
@@ -60,18 +61,18 @@ export default async function OddsPage() {
 
       <Sec id="simulator" labelledBy="sim-h">
         <div className="pg-split">
-          <div className="c5 pg-col">
-            <SecHead n={3} id="sim-h">{o.simTitle}</SecHead>
+          <div className="c4 pg-col">
+            <SecHead n={2} id="sim-h">{o.simTitle}</SecHead>
             <p className="body">{o.simBody}</p>
           </div>
-          <div className="c7 pg-col pg-col-r"><Simulator /></div>
+          <div className="c8 pg-col pg-col-r"><Simulator /></div>
         </div>
       </Sec>
 
       <Sec id="tables" labelledBy="tbl-h">
         <div className="pg-split">
           <div className="c4 pg-col">
-            <SecHead n={4} id="tbl-h">{o.tableTitle}</SecHead>
+            <SecHead n={3} id="tbl-h">{o.tableTitle}</SecHead>
             <p className="body">{fill(o.tableBody, { n: formatInt(total.value, locale), tol: formatPct(tol.value, 1).replace("%", " %") })}</p>
             <div><a className="act" href={GITHUB_G3} target="_blank" rel="noreferrer">{t("odds.readG3")}<Arr c="↗" /></a></div>
           </div>
@@ -81,12 +82,11 @@ export default async function OddsPage() {
                 <thead><tr><th>{o.colDecile}</th><th className="r">{o.colMean}</th><th className="r ph-hide">{o.colCi}</th><th className="r">{o.colN}</th></tr></thead>
                 <tbody>
                   {deciles.value.map((r) => (
-                    <tr key={r.decile}><td className="fig">{r.decile}</td><td className="r fig">×{r.mean.toFixed(4)}</td><td className="r fig ph-hide">± {r.ci95.toFixed(4)}</td><td className="r fig"><span className="ph-hide">{formatInt(r.n, locale)}</span><span className="ph-only">{(r.n / 1e6).toFixed(1)} M</span></td></tr>
+                    <tr key={r.decile}><td className="fig">{r.decile}</td><td className="r fig">×{r.mean.toFixed(4)}<span className="ph-only ci fine">± {r.ci95.toFixed(4)}</span></td><td className="r fig ph-hide">± {r.ci95.toFixed(4)}</td><td className="r fig"><span className="ph-hide">{formatInt(r.n, locale)}</span><span className="ph-only">{(r.n / 1e6).toFixed(1)} M</span></td></tr>
                   ))}
                 </tbody>
               </table>
             </TableWrap>
-            <p className="fine ph-note">{o.ciNote}</p>
           </div>
         </div>
       </Sec>
@@ -94,7 +94,8 @@ export default async function OddsPage() {
       <Sec id="glossary" labelledBy="gl-h">
         <div className="pg-split">
           <div className="c4 pg-col">
-            <SecHead n={5} id="gl-h">{o.wordsTitle}</SecHead>
+            <SecHead n={4} id="gl-h">{o.wordsTitle}</SecHead>
+            <p className="body">{o.wordsIntro}</p>
           </div>
           <div className="c8 pg-col pg-col-r">
             <Glossary rows={glossary} words />

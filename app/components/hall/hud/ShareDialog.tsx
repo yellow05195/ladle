@@ -18,7 +18,10 @@ import { mult } from "../fmt";
 export function ShareDialog({ n, id, players, tiles, mine, myTokens = null, myName = null, sum = "", seed8, demo, onClose }: { n: string; id: string; players: number; tiles: CardTile[]; mine: number | null; myTokens?: string | null; myName?: string | null; sum?: string; seed8: string; demo: boolean; onClose: () => void }) {
   const t = useT();
   const canvas = useRef<HTMLCanvasElement>(null);
+  const linkRef = useRef<HTMLSpanElement>(null);
   const [copied, setCopied] = useState(false);
+  /** the clipboard refused: the link is selected and this line says how to copy it (4 s) */
+  const [manual, setManual] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   const [drawn, setDrawn] = useState(false);
   const min = Math.min(...tiles.map((x) => x.m)), max = Math.max(...tiles.map((x) => x.m));
@@ -40,6 +43,30 @@ export function ShareDialog({ n, id, players, tiles, mine, myTokens = null, myNa
     }).then(() => { setDrawn(true); try { setUrl(c.toDataURL("image/png")); } catch { setUrl(null); } });
   }, [n, id, players, tiles, seed8, demo, t, mine, myName, myTokens, min, max, sum]);
   useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); }; document.addEventListener("keydown", k); return () => document.removeEventListener("keydown", k); }, [onClose]);
+  useEffect(() => {
+    if (!manual) return;
+    const id = window.setTimeout(() => setManual(false), 4000);
+    return () => clearTimeout(id);
+  }, [manual]);
+  const copy = () => {
+    const fallback = () => {
+      // no clipboard (refused, or an insecure page): select the link so the reader copies it themselves
+      const el = linkRef.current;
+      const sel = window.getSelection();
+      if (el && sel) { const range = document.createRange(); range.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(range); }
+      setCopied(false);
+      setManual(true);
+    };
+    try {
+      if (!navigator.clipboard?.writeText) { fallback(); return; }
+      navigator.clipboard.writeText(link).then(() => { setManual(false); setCopied(true); }, fallback);
+    } catch { fallback(); }
+  };
+  // the post text, with the link itself in its own span (the one the fallback selects)
+  const at = text.lastIndexOf(link);
+  const pre = at >= 0 ? text.slice(0, at) : `${text} `;
+  const post = at >= 0 ? text.slice(at + link.length) : "";
+  const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
   if (typeof document === "undefined") return null;
   return createPortal(
     <>
@@ -52,12 +79,14 @@ export function ShareDialog({ n, id, players, tiles, mine, myTokens = null, myNa
           <canvas ref={canvas} className="share-prev" aria-label={t("h.sh.preview", { n })} role="img" hidden={!drawn || !!url} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           {url ? <img className="share-prev" src={url} alt={t("h.sh.preview", { n })} width={1200} height={630} /> : !drawn ? <div className="share-prev" aria-hidden="true" /> : null}
+          {/* two equal keys, then the download at full width (three equal keys never fit their labels in 392 px) */}
           <div className="trio">
-            <button type="button" className="key sec s" onClick={() => { void navigator.clipboard?.writeText(link).then(() => setCopied(true)).catch(() => {}); }}>{copied ? t("h.sh.copied") : t("h.sh.copy")}</button>
+            <button type="button" className="key sec s" onClick={copy}>{copied ? t("h.sh.copied") : t("h.sh.copy")}</button>
             <a className="key sec s" href={`https://x.com/intent/post?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">{t("h.sh.x")}</a>
-            {url ? <a className="key sec s" href={url} download={`ladle-round-${n}.png`}>{t("h.sh.download")}</a> : <span className="key sec s" aria-disabled="true">{t("h.sh.download")}</span>}
+            {url ? <a className="key sec s dl" href={url} download={`ladle-round-${n}.png`}>{t("h.sh.download")}</a> : <span className="key sec s dl" aria-disabled="true">{t("h.sh.download")}</span>}
           </div>
-          <p className="fine">{text}</p>
+          <p className="label copy-how" aria-live="polite">{manual ? (touch ? t("h.sh.selectLink") : t("h.sh.pressCopy", { k: /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘C" : "Ctrl+C" })) : ""}</p>
+          <p className="fine share-text">{pre}<span ref={linkRef} className="share-link">{link}</span>{post}</p>
         </div>
       </div>
     </>,

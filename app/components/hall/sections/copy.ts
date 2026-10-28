@@ -52,7 +52,7 @@ export const P = {
     integrate: "Integrate",
     cmds: [
       { c: "!scoop 0.25", r: "enters this round with 0.25 SOL, at the same price as everyone" },
-      { c: "!odds", r: "the law in one line, with the measured spread" },
+      { c: "!odds", r: "how the split works, with the measured spread" },
       { c: "!pot", r: "what is in this round, and how many players" },
       { c: "!verify 1099", r: "recomputes a served round from its seed" },
       { c: "!sell", r: "sells your last scoop back at the curve price, 0 fee" },
@@ -69,7 +69,7 @@ export const P = {
   qa: {
     l1: "House",
     l2: "questions.",
-    more: "Security, status and risks",
+    more: "All questions",
   },
 
   /* ---------------- inner pages ---------------- */
@@ -91,8 +91,8 @@ export const P = {
     colMean: "Mean factor",
     colCi: "95 % interval",
     colN: "Entries",
-    ciNote: "The 95 % interval of each row is in the table on a wider screen.",
     wordsTitle: "The words we use.",
+    wordsIntro: "Seven words, used the same way on every page and in the chat.",
   },
 
   sec: {
@@ -112,8 +112,10 @@ export const P = {
   int: {
     label: "Integrate",
     title: "Bring Ladle to your stream.",
-    previewNote: "The embed, running on demo data",
+    previewNote: "The main room on demo data, with no host fee. Your room adds your line, as written above.",
     rulesTitle: "Every host room follows these.",
+    rulesIntro: "The same in every room, the main room included. A host sets one thing: its fee, at most {pct} %, written once.",
+    sdkNote: "Package name before the public release.",
     feeTitle: "Line by line, for 1 SOL.",
     colHost: "Host fee",
     colPlatform: "Platform 1.00 %",
@@ -143,6 +145,8 @@ export const P = {
       { t: "Today", b: "This site runs on demo data in your browser while the program is tested. It is not deployed or audited yet; the status page says what is done and what is not." },
     ],
     status: "Security and status",
+    qaTitle: "Questions, answered.",
+    qaIntro: "Short answers. The long versions, with the measurements, are on the odds and security pages.",
   },
 
   brand: {
@@ -150,13 +154,13 @@ export const P = {
     title: "The d is the ladle.",
     lede: "The word is drawn, not typeset: its d is a ladle holding one ball. The symbol is that d alone.",
     markTitle: "The mark",
-    markBody: "A ladle hanging by its hole, holding one scoop. Used for avatars, the favicon and the app tile. The ball is always saffron on dark grounds and never changes colour for a state or a result.",
+    markBody: "A ladle hanging by its hole, holding one scoop. Used for avatars, the favicon and the app icon. The ball is always saffron on dark grounds and never changes colour for a state or a result.",
     waysTitle: "Five ways to wear it.",
     ways: [
-      { name: "Primary", sample: "#16120F", src: "mark", hex: "cream and saffron on charcoal", role: "the site, the X avatar, social cards" },
+      { name: "Primary", sample: "#16120F", src: "mark", hex: "cream and saffron on charcoal", role: "the site, the app icon, the X avatar, social cards" },
       { name: "Light", sample: "#F6EEE3", src: "markLight", hex: "charcoal and tomato on cream", role: "print and documents" },
       { name: "Hall", sample: "#3A2618", src: "markBrass", hex: "brass and saffron on walnut", role: "signage inside the hall" },
-      { name: "Tile", sample: "#FF5A36", src: "avatarTomato", hex: "charcoal ladle, cream ball, on tomato", role: "the app tile and stickers" },
+      { name: "Tile", sample: "#FF5A36", src: "avatarTomato", hex: "charcoal ladle, cream ball, on tomato", role: "the tomato avatar and stickers" },
       { name: "One colour", sample: "#16120F", src: "markMono", hex: "currentColor", role: "engraving, stamps, one-ink print; the ball's gap is cut out" },
     ],
     paletteTitle: "Every colour has one job.",
@@ -166,7 +170,7 @@ export const P = {
       { key: "charcoal", name: "Charcoal", role: "the ground, the plates and the wells" },
       { key: "cream", name: "Cream", role: "text, and everything that is yours: your note, your scoop, your tag" },
       { key: "saffron", name: "Saffron", role: "the ball, never a state or a result" },
-      { key: "tomato", name: "Tomato", role: "the one action on screen, with a charcoal label; the app tile" },
+      { key: "tomato", name: "Tomato", role: "the one action on screen, with a charcoal label; stickers" },
       { key: "oxblood", name: "Oxblood", role: "the hall's velvet" },
       { key: "walnut", name: "Walnut", role: "the hall's panels" },
       { key: "brass", name: "Brass", role: "the hall's fittings, in the 3D only" },
@@ -179,6 +183,7 @@ export const P = {
     dontTitle: "Please don't.",
     dontCrowd: "NEW",
     clearNote: "Clear space: one ball diameter (36 units) all round the word, drawn here as the dashed line.",
+    clearBall: "1 ball",
     clearAria: "The wordmark inside its clear space of one ball diameter",
     size16: "16 px, on its tile",
     charTitle: "Twelve guests.",
@@ -281,7 +286,7 @@ export const TOUR_COPY = {
     foundingLink: "The founding hosts",
     cmds: [
       { c: "!scoop 0.25", r: "enters this round at the same price as everyone" },
-      { c: "!odds", r: "the law in one line" },
+      { c: "!odds", r: "how the split works" },
       { c: "!verify 1099", r: "recomputes a served round from its seed" },
     ],
   },

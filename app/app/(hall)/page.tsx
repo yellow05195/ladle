@@ -24,8 +24,9 @@ export default async function HomePage() {
   const { t, locale } = await getDict();
   const fee = platformFeeBps();
   const hostFee = maxHostFeeBps();
-  const risks = ([1, 2, 3, 4] as const).map((i) => ({ q: t(`h.faq.r${i}q`), a: t(`h.faq.r${i}a`) }));
-  const faq = ([1, 2, 3, 4, 5, 6] as const).map((i) => ({ q: t(`faq.q${i}`), a: t(`faq.a${i}`, { bps: formatInt(fee.value, locale), host: formatInt(hostFee.value, locale) }) }));
+  // five questions on the tour (the risks first); all ten are on /about#questions
+  const risk = (i: 1 | 2 | 4) => ({ q: t(`h.faq.r${i}q`), a: t(`h.faq.r${i}a`) });
+  const faq = (i: 3 | 5) => ({ q: t(`faq.q${i}`), a: t(`faq.a${i}`, { bps: formatInt(fee.value, locale), host: formatInt(hostFee.value, locale) }) });
   return (
     <>
       <TourDriver />
@@ -39,7 +40,7 @@ export default async function HomePage() {
         <BooksChapter />
         <HostsChapter />
         <GenesisChapter />
-        <QuestionsChapter items={[...risks, ...faq]} />
+        <QuestionsChapter items={[risk(2), risk(1), risk(4), faq(5), faq(3)]} />
         <div className="tour-foot"><SiteFooter /></div>
       </div>
     </>

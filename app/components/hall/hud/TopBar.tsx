@@ -80,7 +80,8 @@ export function TopBar({ solid = false, room = false }: { solid?: boolean; room?
       {menu ? (
         <nav id="menu-sheet" className="menu-sheet" aria-label={t("h.nav.menu")}>
           <Link className="m" href="/#how">{t("h.nav.how")}</Link>
-          {[{ href: "/odds", k: "h.nav.odds" }, { href: "/window/latest", k: "h.nav.verify" }, { href: "/integrate", k: "h.nav.integrate" }, { href: "/security", k: "h.nav.security" }, { href: "/about", k: "h.nav.about" }, { href: "/brand", k: "h.nav.brand" }].map((m) => (
+          {/* the same six as the desktop nav (/brand stays in the footer) */}
+          {[{ href: "/odds", k: "h.nav.odds" }, { href: "/window/latest", k: "h.nav.verify" }, { href: "/integrate", k: "h.nav.integrate" }, { href: "/security", k: "h.nav.security" }, { href: "/about", k: "h.nav.about" }].map((m) => (
             <Link key={m.href} className="m" href={m.href} aria-current={current(m.href)}>{t(m.k as Parameters<typeof t>[0])}</Link>
           ))}
           <div className="msh-foot">

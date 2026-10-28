@@ -20,8 +20,11 @@ export type Msg =
   | { id: number; kind: "user"; name: string; mine: boolean; cmd: string }
   | { id: number; kind: "drop"; name: string; mine: boolean; sol: string; cmd?: string }
   | { id: number; kind: "sys" | "reply"; title: string; text: string; href?: string; hrefLabel?: string; /** v21.1: about the viewer's own entry or scoop (a cream note in the chat) */ personal?: boolean }
-  /** v21: a room notice (a phase of the round), on the chat's text column */
-  | { id: number; kind: "notice"; text: string; href?: string; hrefLabel?: string };
+  /**
+   * v21: a room notice, on the chat's text column. Fix r2: a round has one notice ("Round No. 1111 · 12 in ·
+   * sealed at slot 92") that keeps its place and its id, and whose text is updated in place (`round` is its id).
+   */
+  | { id: number; kind: "notice"; text: string; href?: string; hrefLabel?: string; round?: string };
 
 /** A player in the round, for the avatar strip. */
 export interface Player { key: string; name: string; mine: boolean }

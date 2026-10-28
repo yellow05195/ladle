@@ -73,19 +73,24 @@ export function roomNicknameOk(nick: string): boolean {
 export type FailReason = "no-profile" | "rate-limited" | "too-long" | "empty" | "unknown-command" | "offline" | "blocked" | "muted" | "not-signed";
 
 /** One short line under the input. Plain, never blaming, never urging to play. */
-export function hintFor(reason: FailReason, x: { chars?: number; retryMs?: number; slowMs?: number | null; everyMs?: number } = {}): string {
+export function hintFor(reason: FailReason, x: { chars?: number; retryMs?: number; slowMs?: number | null; everyMs?: number; /** the command the viewer typed (unknown-command) */ cmd?: string } = {}): string {
   // "1.5 s" for a rule, whole seconds for a wait
   const every = (ms: number) => `${Math.max(0.5, Math.round(ms / 500) / 2)} s`;
   const s = (ms: number) => `${Math.max(1, Math.ceil(ms / 1000))} s`;
   switch (reason) {
     case "empty": return "Type a line, or a command like !odds.";
-    case "unknown-command": return "Commands: !scoop 0.25, !odds, !pot, !verify, !sell.";
+    case "unknown-command": {
+      const c = (x.cmd ?? "").split(" ")[0]!.slice(0, 24);
+      // (the chat draws the typed command as a token, so it needs no quotes)
+      return `${c && c !== "!" ? `${c} isn’t a command.` : "That isn’t a command."} Try !scoop 0.25, !odds, !pot, !verify, !sell.`;
+    }
     case "too-long": return `Keep it to ${MAX_TEXT} characters${x.chars ? ` (this one has ${x.chars})` : ""}.`;
     case "no-profile": return "Make a profile to talk. Reading the room needs nothing.";
     case "not-signed": return "Talking needs one signature from your wallet. It is not a transaction.";
     case "rate-limited":
-      if (x.slowMs) return `The room is busy: one line every ${every(x.slowMs)}${x.retryMs ? `, next in ${s(x.retryMs)}` : ""}.`;
-      return `One line every ${every(x.everyMs ?? 1500)}${x.retryMs ? `, next in ${s(x.retryMs)}` : ""}.`;
+      if (x.slowMs) return `The room is in slow mode, one line every ${every(x.slowMs)}${x.retryMs ? `. Next line in ${s(x.retryMs)}` : ""}.`;
+      // (never "one line every 1.5 s, next in 2 s": the wait is rounded up, the rule is not)
+      return x.retryMs ? `Slow down a little: next line in ${s(x.retryMs)}.` : `Slow down a little: one line every ${every(x.everyMs ?? 1500)}.`;
     case "offline": return "The room is reconnecting. That line was not sent.";
     case "blocked": return "Links, addresses and wallet requests stay out of the room.";
     case "muted": return "This wallet is muted in the room.";

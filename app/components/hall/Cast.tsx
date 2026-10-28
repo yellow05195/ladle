@@ -40,8 +40,10 @@ import { CAGE_CENTRE, revealEnd, revealTime, stage, T_SERVE } from "./stage";
 import { multiplierOf } from "../../lib/law-settle";
 import { formatMultiplier } from "../../lib/format";
 import { hall, hallBus, type Quality } from "./store";
+import { tourBus } from "./tour";
 import { sol2, solShort } from "./fmt";
 import { dictionary, format } from "../../i18n";
+import { DATA_SOURCE } from "../../lib/data";
 
 type Kind = "entry" | "me" | "watch";
 
@@ -91,14 +93,16 @@ const blobQ = new THREE.Quaternion();
 const blobS = new THREE.Vector3();
 
 /**
- * Dev only: `?watchers=N` seats N demo spectators in the stands in place of the room's presence
- * (`?watchers=0` empties the stands), to test 0, 40 or 200 watchers. Null without the switch.
+ * `?watchers=N` seats N demo spectators in the stands in place of the room's presence
+ * (`?watchers=0` empties the stands), to show 0, 40 or 100 watchers. v21 fix: the demo source only
+ * (never on the chain source), in development and production builds alike, clamped to 0 … 100.
+ * Null without the switch.
  */
 function devWatchers(): Presence[] | null {
-  if (typeof window === "undefined" || process.env.NODE_ENV === "production") return null;
+  if (typeof window === "undefined" || DATA_SOURCE !== "demo") return null;
   const raw = new URLSearchParams(window.location.search).get("watchers");
   if (raw === null) return null;
-  const n = Math.min(400, Math.max(0, Math.floor(Number(raw)) || 0));
+  const n = Math.min(100, Math.max(0, Math.floor(Number(raw)) || 0));
   const SYL = ["ka", "mo", "ri", "te", "lu", "na", "so", "vi", "do", "pe", "ha", "ze", "ol", "ib", "um", "ar"];
   const out: Presence[] = [];
   for (let k = 0; k < n; k++) {
@@ -488,6 +492,8 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
     };
   }, [camera, size]);
 
+  /** r2: the tag layer is hidden while the home's tour is away from the first screen */
+  const tagsAway = useRef(false);
   const projected = { x: 0, y: 0, ok: false };
   const project = (c: Char, dy: number) => {
     v.set(c.pos.x, c.pos.y + dy, c.pos.z).project(camera);
@@ -499,8 +505,12 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
   const placeTags = (now: number, w: typeof hallBus.w, revealing: boolean, t: number) => {
     const host = tagHost();
     if (!host) return;
-    // v21: below the home's first screen the tags are hidden (the tour); nothing to project until they come back
-    if (hall.get().tour && hall.get().scroll >= 1) return;
+    // v21: below the home's first screen the tags are hidden (the tour); nothing to project until they come back.
+    // r2 fix: back at the top they wait for the camera too (the tour home, no flight under way), so they never sit over
+    // another stop's view while it catches up
+    const away = hall.get().tour && (hall.get().scroll >= 1 || tourBus.t > 0.02 || tourBus.fly < 1);
+    if (away !== tagsAway.current) { tagsAway.current = away; host.style.visibility = away ? "hidden" : ""; }
+    if (away) return;
     const W = size.width, H = size.height;
     readPanes();
     const s = hall.get();

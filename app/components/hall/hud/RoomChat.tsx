@@ -11,18 +11,21 @@
  * with the ladle mark for portrait), room notices (no disc, on the text
  * column) and personal notes (a cream note, never sent).
  *
- * Built for a full hall: joins coalesce, other players' !scoop lines
- * coalesce into one notice per 4 s ("pedod, sohan and 4 more scooped in"),
- * other command bursts fold, the last 200 lines are kept, row objects are
- * reused so only new rows render, new lines only at the bottom.
+ * Built for a full hall, and so that people talking stay the chat (fix r2):
+ * each round is one room notice updated in place (useRoundChat), other
+ * players' entries are counted there (their typed !scoop lines too),
+ * arrivals are the presence row's count (no "took a seat" lines), other
+ * command bursts fold, the last 200 lines are kept, row objects are reused
+ * so only new rows render, new lines only at the bottom, and the log stays
+ * pinned to its newest line whatever height that line takes once drawn.
  */
 import Link from "next/link";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../../../i18n/client";
 import { playerColor } from "../../../lib/colors";
-import type { Species } from "../../../lib/profile";
-import { MAX_TEXT, hintFor, signInToChat, useChat, usePresence, useRoomLog, type ChatLine, type Presence, type SendResult } from "../../../lib/chat";
+import { SCARVES, SPECIES, type Species } from "../../../lib/profile";
+import { MAX_TEXT, hintFor, signInToChat, useChat, usePresence, useRoomLog, type ChatLine, type SendResult } from "../../../lib/chat";
 import type { Msg } from "../../game/types";
 import { HIcon } from "../../ui/icons";
 import { Arr, Mark } from "../../ui/house";
@@ -87,31 +90,19 @@ export const RoomChat = memo(function RoomChat({ msgs, sendRound, myName, myScar
     });
   }, []);
 
-  // joins within 4 s coalesce into one notice ("6 players took a seat")
-  const seen = useRef<Set<string> | null>(null);
-  const joinBuf = useRef<Presence[]>([]);
-  const joinTimer = useRef<number | null>(null);
+  // the 72 portrait thumbs, fetched once the room is idle, so a disc rarely waits for its picture
   useEffect(() => {
-    const ids = new Set(present.map((p) => p.profile.id));
-    if (seen.current === null) { seen.current = ids; return; }
-    for (const p of present) if (!seen.current.has(p.profile.id)) joinBuf.current.push(p);
-    seen.current = ids;
-    if (joinBuf.current.length && joinTimer.current === null) {
-      joinTimer.current = window.setTimeout(() => {
-        const n = joinBuf.current.length;
-        const first = joinBuf.current[0]!;
-        joinBuf.current = [];
-        joinTimer.current = null;
-        addExtra({ kind: "notice", text: n === 1 ? t("h.chat.joinOne", { name: first.profile.nickname }) : t("h.chat.joinMany", { n }) });
-      }, 4000);
-    }
-  }, [present, addExtra, t]);
-  useEffect(() => () => { if (joinTimer.current !== null) clearTimeout(joinTimer.current); }, []);
+    const go = () => { for (const sp of SPECIES) for (const s of SCARVES) { const i = new Image(); i.decoding = "async"; i.src = thumbUrl(sp, s.id); } };
+    const w = window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    if (w.requestIdleCallback) { const id = w.requestIdleCallback(go, { timeout: 2500 }); return () => w.cancelIdleCallback?.(id); }
+    const id = window.setTimeout(go, 1200);
+    return () => clearTimeout(id);
+  }, []);
 
   // the merged stream, folded for a crowd
   const cache = useRef(new Map<string, Row>());
   const rows = useMemo<Row[]>(() => {
-    type It = { at: number; key: string; row: Row; burstCmd?: string; scoop?: string };
+    type It = { at: number; key: string; row: Row; burstCmd?: string };
     const items: It[] = [];
     const myId = room.me?.id;
     let lastTalk: { id: string; at: number } | null = null;
@@ -121,11 +112,13 @@ export const RoomChat = memo(function RoomChat({ msgs, sendRound, myName, myScar
     for (const it of log) {
       if (it.src === "round") {
         const m = it.msg;
+        // other players' entries are counted in their round's notice
+        if (m.kind === "drop" && !m.mine) continue;
         if (m.kind === "user" || m.kind === "drop") {
           const name = m.mine ? myName : m.name;
           const cmd = m.kind === "user" ? m.cmd : m.cmd ?? `!scoop ${m.sol}`;
           const verb = cmd.split(" ")[0]!;
-          items.push({ at: it.at, key: it.key, row: { key: it.key, kind: "cmd", name, color: m.mine && myScarf ? myScarf : whoBy.get(name)?.scarf ?? playerColor(name || "you"), species: speciesFor(name, m.mine), cmd, mine: m.mine }, burstCmd: m.mine ? undefined : verb, scoop: !m.mine && verb === "!scoop" ? name : undefined });
+          items.push({ at: it.at, key: it.key, row: { key: it.key, kind: "cmd", name, color: m.mine && myScarf ? myScarf : whoBy.get(name)?.scarf ?? playerColor(name || "you"), species: speciesFor(name, m.mine), cmd, mine: m.mine }, burstCmd: m.mine ? undefined : verb });
           lastTalk = null; lastSys = false;
         } else if (m.kind === "notice") {
           items.push({ at: it.at, key: it.key, row: { key: it.key, kind: "notice", text: m.text, href: m.href, hrefLabel: m.hrefLabel } });
@@ -144,8 +137,10 @@ export const RoomChat = memo(function RoomChat({ msgs, sendRound, myName, myScar
         if (l.kind === "system" || !l.from) { items.push({ at: it.at, key: it.key, row: { key: it.key, kind: "sys", text: l.text, first: !lastSys } }); lastTalk = null; lastSys = true; continue; }
         const mine = !!myId && l.from.id === myId;
         if (l.kind === "command") {
-          const verb = l.text.split(" ")[0]!;
-          items.push({ at: it.at, key: it.key, row: { key: it.key, kind: "cmd", name: l.from.nickname, color: l.from.scarf, species: l.from.species, cmd: l.text, mine }, burstCmd: mine ? undefined : verb, scoop: !mine && verb === "!scoop" ? l.from.nickname : undefined });
+          const verb = l.text.split(" ")[0]!.toLowerCase();
+          // another player's !scoop: their entry reaches the round's notice through the chain
+          if (!mine && verb === "!scoop") continue;
+          items.push({ at: it.at, key: it.key, row: { key: it.key, kind: "cmd", name: l.from.nickname, color: l.from.scarf, species: l.from.species, cmd: l.text, mine }, burstCmd: mine ? undefined : verb });
           lastTalk = null; lastSys = false; continue;
         }
         const cont = !!lastTalk && lastTalk.id === l.from.id && it.at - lastTalk.at < 30_000;
@@ -156,21 +151,12 @@ export const RoomChat = memo(function RoomChat({ msgs, sendRound, myName, myScar
     for (const x of extras) items.push({ at: x.at, key: x.key, row: x.kind === "notice" ? { key: x.key, kind: "notice", text: x.text } : { key: x.key, kind: "personal", text: x.text, action: x.action } });
     items.sort((a, b) => a.at - b.at);
     const out: Row[] = [];
-    // other players' !scoop lines: one notice per 4 s window, in the place of its first line
-    let group: { at: number; key: string; names: string[]; idx: number } | null = null;
-    const scoopText = (names: string[]) => (names.length === 1 ? t("h.chat.scoopOne", { a: names[0]! }) : names.length === 2 ? t("h.chat.scoopTwo", { a: names[0]!, b: names[1]! }) : t("h.chat.scoopMany", { a: names[0]!, b: names[1]!, k: names.length - 2 }));
     // other commands: more than 3 from others within 1 s, the rest fold into "+4 more !odds"
     let burstAt = -1e15, shown = 0;
     let folded = new Map<string, number>();
     const flush = (k: string) => { for (const [cmd, n] of folded) out.push({ key: `${k}:${cmd}`, kind: "notice", text: t("h.chat.fold", { n, cmd }) }); folded = new Map(); };
     let lastKey = "f0";
     for (const it of items) {
-      if (it.scoop) {
-        if (!group || it.at - group.at > 4000) { group = { at: it.at, key: `g:${it.key}`, names: [], idx: out.length }; out.push({ key: group.key, kind: "notice", text: "" }); }
-        group.names.push(it.scoop);
-        out[group.idx] = { key: group.key, kind: "notice", text: scoopText(group.names) };
-        continue;
-      }
       if (it.burstCmd) {
         if (it.at - burstAt > 1000) { flush(lastKey); burstAt = it.at; shown = 0; }
         if (shown < 3) { shown++; out.push(it.row); }
@@ -192,6 +178,7 @@ export const RoomChat = memo(function RoomChat({ msgs, sendRound, myName, myScar
 
   // scrolling: pinned to the bottom while the reader is within 24 px of it
   const logRef = useRef<HTMLDivElement>(null);
+  const rowsRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const [behind, setBehind] = useState(false);
   useEffect(() => {
@@ -200,6 +187,15 @@ export const RoomChat = memo(function RoomChat({ msgs, sendRound, myName, myScar
     if (pinned.current) { el.scrollTop = el.scrollHeight; setBehind(false); }
     else setBehind(true);
   }, [rows, full]);
+  // a new row is first laid out at its placeholder height and only then at its real 2-3 lines: whenever the rows
+  // change height, a pinned log follows its newest line again (it is never left cut under the input)
+  useEffect(() => {
+    const el = logRef.current, inner = rowsRef.current;
+    if (!el || !inner) return;
+    const ro = new ResizeObserver(() => { if (pinned.current) el.scrollTop = el.scrollHeight; });
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [full]);
   // only the reader's own scrolling unpins (new rows, trims and anchoring never do)
   const intent = useRef(0);
   const markIntent = () => { intent.current = performance.now(); };
@@ -210,7 +206,8 @@ export const RoomChat = memo(function RoomChat({ msgs, sendRound, myName, myScar
     if (near) { pinned.current = true; setBehind(false); return; }
     if (performance.now() - intent.current < 800) pinned.current = false;
   };
-  const toBottom = () => { const el = logRef.current; if (!el) return; pinned.current = true; el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); setBehind(false); };
+  // a jump, not a glide: a smooth scroll aims at the height it read when it started and stops short of rows still growing
+  const toBottom = () => { const el = logRef.current; if (!el) return; pinned.current = true; el.scrollTop = el.scrollHeight; setBehind(false); };
 
   // the typeahead
   const ahead = value.startsWith("!") && !value.includes(" ") ? AHEAD.filter((a) => a.cmd.startsWith(value.toLowerCase())) : [];
@@ -256,9 +253,14 @@ export const RoomChat = memo(function RoomChat({ msgs, sendRound, myName, myScar
       if (e.key === "ArrowDown") { e.preventDefault(); setNavigated(true); setActive((a) => (a + 1) % ahead.length); return; }
       if (e.key === "ArrowUp") { e.preventDefault(); setNavigated(true); setActive((a) => (a - 1 + ahead.length) % ahead.length); return; }
       if (e.key === "Tab") { e.preventDefault(); fill(ahead[active]!.cmd); return; }
-      if (e.key === "Escape") { e.preventDefault(); setValue(""); return; }
-      // Enter sends what was typed, unless the reader moved through the list first
-      if (e.key === "Enter" && navigated) { e.preventDefault(); take(ahead[active]!.cmd); return; }
+      // Escape closes the list only (never the phone's full chat sheet around it)
+      // (React listens on the document itself, next to the sheet's own Escape listener: stop the native event there too)
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); setValue(""); return; }
+      // Enter takes the highlighted command when the field is only the start of it ("!ve" → !verify) or the
+      // reader moved through the list; a command typed out in full ("!odds") is sent as typed
+      const typed = value.trim().toLowerCase();
+      const partial = !typed.includes(" ") && typed !== ahead[active]!.cmd && ahead[active]!.cmd.startsWith(typed);
+      if (e.key === "Enter" && (navigated || partial)) { e.preventDefault(); take(ahead[active]!.cmd); return; }
     }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(value); }
     if (e.key === "Escape" && full) setFull(false);
@@ -287,12 +289,7 @@ export const RoomChat = memo(function RoomChat({ msgs, sendRound, myName, myScar
         <div className="who">
           {newest.length ? (
             <span className="presence" aria-hidden="true">
-              {newest.map((p) => (
-                <span key={p.profile.id}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={thumbUrl(p.profile.species, p.profile.scarf)} alt="" width={34} height={34} decoding="async" />
-                </span>
-              ))}
+              {newest.map((p) => <Thumb key={p.profile.id} species={p.profile.species} color={p.profile.scarf} size={34} />)}
             </span>
           ) : null}
           <span className="n" style={newest.length ? undefined : { marginLeft: 0 }}>
@@ -307,11 +304,21 @@ export const RoomChat = memo(function RoomChat({ msgs, sendRound, myName, myScar
   // the row elements, rebuilt only when the rows change (typing, focus and the typeahead never rebuild 200 rows)
   const me = profile?.nickname ?? null;
   const rowEls = useMemo(() => rows.map((r) => <ChatRow key={r.key} r={r} me={me} onProfile={openProfile} />), [rows, me, openProfile]);
+  /** the last n rows, with at most one room notice among them (the phone plate shows people, not the log) */
+  const lastRows = (n: number) => {
+    const pick: ReactNode[] = [];
+    let notices = 0;
+    for (let i = rows.length - 1; i >= 0 && pick.length < n; i--) {
+      if (rows[i]!.kind === "notice") { if (notices) continue; notices++; }
+      pick.push(rowEls[i]);
+    }
+    return pick.reverse();
+  };
   const lines = (n?: number) => (
     <div ref={logRef} className="rchat-log" role="log" aria-live="polite" aria-relevant="additions" aria-label={t("h.chat.folio")} tabIndex={0} onScroll={onScroll} onWheel={markIntent} onTouchMove={markIntent} onKeyDown={markIntent} onPointerDown={markIntent}
       onClick={variant === "phone" && !full ? () => setFull(true) : !full ? () => setDrawer((d) => !d) : undefined}>
       <span className="spacer" />
-      {n ? rowEls.slice(-n) : rowEls}
+      <div ref={rowsRef} className="rchat-rows">{n ? lastRows(n) : rowEls}</div>
     </div>
   );
 
@@ -356,7 +363,7 @@ export const RoomChat = memo(function RoomChat({ msgs, sendRound, myName, myScar
             <span className="title">{t("h.chat.folio")}</span>
             {count ? <span className="count fine">{count}</span> : null}
           </button>
-          {!full ? lines(4) : null}
+          {!full ? lines(3) : null}
           {!full ? input : null}
         </section>
         {full ? <PhoneChatSheet head={head} onClose={() => setFull(false)}>{lines()}{keys}{input}</PhoneChatSheet> : null}
@@ -430,21 +437,41 @@ function PhoneChatSheet({ head, children, onClose }: { head: ReactNode; children
   );
 }
 
-/** A pet portrait in a 24 px disc (yours with a cream ring). */
-function Face({ species, color, mine }: { species: Species; color: string; mine: boolean }) {
+/**
+ * A pet portrait (the presence row, chat discs). Until its picture is decoded the disc holds the player's
+ * colour dot, so a slow network never shows an empty circle. Rows are in view when added: no lazy loading.
+ */
+function Thumb({ species, color, size }: { species: Species; color: string; size: number }) {
+  const [ok, setOk] = useState(false);
   return (
-    <span className={`face ${mine ? "me" : ""}`} aria-hidden="true">
+    <span className={ok ? "" : "wait"} style={ok ? undefined : { ["--pc" as string]: color }}>
+      {ok ? null : <i className="pdot" aria-hidden="true" />}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={thumbUrl(species, color)} alt="" width={24} height={24} loading="lazy" decoding="async" />
+      <img src={thumbUrl(species, color)} alt="" width={size} height={size} decoding="async" onLoad={() => setOk(true)} />
     </span>
   );
 }
 
-/** Commands named in the house's text read as tokens; in a cream note the figures are heavier. */
+/** A pet portrait in a 24 px disc (yours with a cream ring). */
+function Face({ species, color, mine }: { species: Species; color: string; mine: boolean }) {
+  const [ok, setOk] = useState(false);
+  return (
+    <span className={`face ${mine ? "me" : ""} ${ok ? "" : "wait"}`} aria-hidden="true" style={ok ? undefined : { ["--pc" as string]: color }}>
+      {ok ? null : <i className="pdot" />}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={thumbUrl(species, color)} alt="" width={24} height={24} decoding="async" onLoad={() => setOk(true)} />
+    </span>
+  );
+}
+
+/** Commands named in the house's text read as tokens (a comma right after a token is left out: the token's own box separates them); in a cream note the figures are heavier. */
 const RICH = /(![a-z]+(?: \d+(?:\.\d+)?)?|×\d+(?:\.\d+)?)/g;
 function Rich({ text, bold = false }: { text: string; bold?: boolean }) {
   const parts = text.split(RICH);
-  return <>{parts.map((p, i) => (i % 2 === 0 ? p : p.startsWith("!") ? <span key={i} className="tok">{p}</span> : bold ? <b key={i}>{p}</b> : p))}</>;
+  return <>{parts.map((p, i) => {
+    if (i % 2 === 0) return i > 0 && parts[i - 1]!.startsWith("!") && p.startsWith(",") ? p.slice(1) : p;
+    return p.startsWith("!") ? <span key={i} className="tok">{p}</span> : bold ? <b key={i}>{p}</b> : p;
+  })}</>;
 }
 
 const ChatRow = memo(function ChatRow({ r, me, onProfile }: { r: Row; me: string | null; onProfile: () => void }) {

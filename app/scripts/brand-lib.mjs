@@ -217,11 +217,14 @@ export function symbolSquare({ side, frac, ink, ball, bg, plate, plateFill, plat
   return svgDoc(side, side, body, bg);
 }
 
-/* ---------- text as paths: serif = Fraunces Black, medium / semibold = Schibsted Grotesk (v21) ---------- */
+/* ---------- text as paths: serif = Fraunces Black, medium / semibold = Schibsted Grotesk (v21);
+   v21.1: display / text / textSemi = Figtree 900 / 500 / 600 (static instances of figtree-400-900.ttf, made with
+   `py -I -m fontTools.varLib.instancer figtree-400-900.ttf wght=900 -o figtree-900.ttf`, and 500, 600; OFL-Figtree.txt).
+   opentype.js cannot apply ss01, so the a is the default one, which v21.1 §3.4 accepts. ---------- */
 
 const fonts = {};
 function font(name) {
-  const file = { serif: "Fraunces[SOFT,WONK,opsz,wght].ttf", medium: "schibsted-500.ttf", semibold: "schibsted-600.ttf" }[name];
+  const file = { serif: "Fraunces[SOFT,WONK,opsz,wght].ttf", medium: "schibsted-500.ttf", semibold: "schibsted-600.ttf", display: "figtree-900.ttf", text: "figtree-500.ttf", textSemi: "figtree-600.ttf" }[name];
   if (!fonts[file]) {
     const buf = readFileSync(join(here, "fonts", file));
     fonts[file] = parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));

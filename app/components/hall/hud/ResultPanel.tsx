@@ -22,7 +22,7 @@ import { playerColor } from "../../../lib/colors";
 import { HIcon } from "../../ui/icons";
 import { Arr } from "../../ui/house";
 import { useLive } from "../../live/LiveProvider";
-import { ladle, mult, roundNum, sol3 } from "../fmt";
+import { ladle, mult, roundNum, sumDecimals } from "../fmt";
 import { hallBus, useHall } from "../store";
 import { ShareDialog } from "./ShareDialog";
 
@@ -57,6 +57,10 @@ export function ResultSheet({ w, myScarf, live, head, onClose }: { w: LiveWindow
   const mine = w.mineIndex !== null ? rows[w.mineIndex] : undefined;
   const sold = w.phase === "sold";
   const bounty = w.total - s.toCurve - s.platformFee - s.hostFee;
+  // the "In: total = parts" line adds up on screen: the fewest decimals (3 to 9) at which the shown parts sum to the shown total
+  // (formatSol truncates, so at 3 decimals 2.734 = 2.706 + 0.027 could be printed; verify pass)
+  const sumDec = sumDecimals(w.total, [s.toCurve, s.platformFee, s.hostFee, bounty > 0n ? bounty : 0n]);
+  const solX = (v: bigint) => formatSol(v, sumDec);
   const feePct = `${(Number(s.platformFee) / Math.max(1, Number(w.total)) * 100).toFixed(2)} %`;
 
   useEffect(() => {
@@ -98,21 +102,25 @@ export function ResultSheet({ w, myScarf, live, head, onClose }: { w: LiveWindow
     </div>
   ) : (
     <div className="pair">
-      <button type="button" className="key char s" onClick={() => setConfirm(true)} aria-disabled={s.mySellBack === null || undefined} disabled={s.mySellBack === null}>{t("h.rs.sell")}</button>
+      {/* phones: the short label keeps both keys on one line, side by side and the same size */}
+      <button type="button" className="key char s" onClick={() => setConfirm(true)} aria-label={t("h.rs.sell")} aria-disabled={s.mySellBack === null || undefined} disabled={s.mySellBack === null}>
+        <span className="lg" aria-hidden="true">{t("h.rs.sell")}</span><span className="sm" aria-hidden="true">{t("h.rs.sellShort")}</span>
+      </button>
       <button type="button" className="key char s" onClick={onClose}>{t("h.rs.keep")}</button>
     </div>
   );
 
   return (
-    <section className="rsheet hud-pane" aria-labelledby="rs-title">
+    <section className={`rsheet hud-pane ${share ? "sharing" : ""} ${mine ? "" : "watched"}`} aria-labelledby="rs-title">
       <button type="button" className="icon-btn round x" aria-label={t("h.rs.close")} onClick={onClose}><HIcon name="close" /></button>
       <div className="rhd">
         <h2 id="rs-title" className="display-m">{t("h.rs.title", { n })}</h2>
         <p className="label">{t(w.entries.length === 1 ? "h.rs.playersOne" : "h.rs.players", { players: w.entries.length })}</p>
-        {head ? <p className="sr-only">{head}</p> : null}
+        {/* the live round while this sheet hides the instruments: the countdown stays in sight */}
+        {head ? <p className="label live">{head}</p> : null}
       </div>
       {mine && s.myShare !== null && s.myMultiplier !== null ? (
-        <div className="mine plate-cream">
+        <div className={`mine plate-cream ${confirm ? "confirming" : ""}`}>
           <span className="label">{t("h.rs.yours")}</span>
           <p className="num-l">{ladle(s.myShare)}<span className="unit">LADLE</span></p>
           {sold && w.soldFor !== null ? (
@@ -124,7 +132,6 @@ export function ResultSheet({ w, myScarf, live, head, onClose }: { w: LiveWindow
         </div>
       ) : (
         <div className="spect">
-          <p className="title">{t("h.rs.spect", { players: w.entries.length })}</p>
           <div className="fact"><span className="num-m">{ladle(sum)}<span className="unit">LADLE</span></span><span className="label">{t("h.rs.single")}</span></div>
         </div>
       )}
@@ -145,11 +152,12 @@ export function ResultSheet({ w, myScarf, live, head, onClose }: { w: LiveWindow
       <div className="sums">
         <p className="ext">{t("h.rs.extremes", { min: mult(min), max: mult(max) })}</p>
         <p className="fine">
-          {t("h.rs.sum1", { total: sol3(w.total), toCurve: sol3(s.toCurve), fee: sol3(s.platformFee), pct: feePct })}
-          {s.hostFee > 0n ? t("h.rs.sumHost", { host: sol3(s.hostFee) }) : ""}
-          {bounty > 0n ? t("h.rs.sumBounty", { bounty: sol3(bounty) }) : ""}
+          {t("h.rs.sum1", { total: solX(w.total), toCurve: solX(s.toCurve), fee: solX(s.platformFee), pct: feePct })}
+          {s.hostFee > 0n ? t("h.rs.sumHost", { host: solX(s.hostFee) }) : ""}
+          {bounty > 0n ? t("h.rs.sumBounty", { bounty: solX(bounty) }) : ""}
           {" "}{t("h.rs.sum2", { tokens: ladle(sum) })}
         </p>
+        {!w.seedHex && w.entries.length === 1 ? <p className="seedline"><span className="seed">{t("h.rs.noDraw")}</span></p> : null}
         {w.seedHex ? (
           <p className="seedline">
             <span className="seed">{t("h.rs.seed", { seed: seedGroups(w.seedHex) })} ·</span>

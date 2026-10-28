@@ -22,3 +22,6 @@ id.json
 .vercel/
 .claude/
 idl-raw.txt
+
+# TypeScript incremental build cache
+*.tsbuildinfo

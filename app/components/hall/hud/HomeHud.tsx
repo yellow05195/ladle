@@ -42,7 +42,7 @@ const LiveBlock = memo(function LiveBlock({ r, wide }: { r: RoundView; wide: boo
         <Fact value={<RollingFigure text={String(r.players)} />} label={t(r.players === 1 ? "h.fact.playersOne" : "h.fact.players")} />
         <Fact value={<RollingFigure text={sol2(r.pot)} />} unit="SOL" label={t("h.fact.pot")} />
       </div>
-      <p className="pb-short fine hud-in">{t(wide ? "h.pb.short" : "h.pb.shortPhone", { n: r.n, left: slotsLeft(t, r.left), players: r.players, pot: sol2(r.pot) })}</p>
+      <p className="pb-short fine hud-in">{t(wide ? (r.players === 1 ? "h.pb.shortOne" : "h.pb.short") : (r.players === 1 ? "h.pb.shortPhoneOne" : "h.pb.shortPhone"), { n: r.n, left: slotsLeft(t, r.left), players: r.players, pot: sol2(r.pot) })}</p>
       <Stem elapsed={r.elapsed} total={r.total} className="hud-in" />
     </>
   );

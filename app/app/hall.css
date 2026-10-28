@@ -101,9 +101,10 @@ html[data-lit="0"] .hud-in { opacity: 0; animation: none; }
 }
 /* the phone menu: a plate down to the rail; rows, no rules */
 .menu-sheet { position: fixed; left: 0; right: 0; top: var(--top-h); bottom: var(--rail-h); z-index: 31; display: flex; flex-direction: column; gap: 4px; padding: 16px var(--gutter) 16px; background: var(--ground-2); overflow-y: auto; animation: sheet-down var(--dur-3) var(--ease-out) both; }
-.menu-sheet a.m { display: flex; align-items: center; gap: 12px; min-height: 52px; font: 800 26px/1.1 var(--font-sans); font-feature-settings: "ss01"; letter-spacing: -0.012em; color: var(--ink-2); text-decoration: none; }
+.menu-sheet a.m { position: relative; align-self: flex-start; display: flex; align-items: center; gap: 12px; min-height: 52px; font: 800 26px/1.1 var(--font-sans); font-feature-settings: "ss01"; letter-spacing: -0.012em; color: var(--ink-2); text-decoration: none; }
 .menu-sheet a.m[aria-current="page"] { color: var(--ink); }
-.menu-sheet a.m[aria-current="page"]::after { content: ""; width: 4px; height: 22px; border-radius: 2px; background: var(--ink); }
+/* the current page: the desktop marker, a 4 px cream stem 10 px under the word, as wide as the word */
+.menu-sheet a.m[aria-current="page"]::after { content: ""; position: absolute; left: 0; right: 0; top: calc(50% + 20px); height: 4px; border-radius: 2px; background: var(--ink); }
 .menu-sheet .msh-foot { margin-top: auto; padding-top: 24px; display: grid; gap: 12px; }
 @keyframes sheet-down { from { opacity: 0; transform: translateY(-8px); } }
 
@@ -139,6 +140,11 @@ html[data-lit="0"] .hud-in { opacity: 0; animation: none; }
   .demo-slip { top: calc((var(--top-h) - 24px) / 2 + 32px); }
 }
 html:not([data-loaded]) body:has(.lights:not(.open):not(.fade)) .demo-tag { z-index: 63; }
+/* touch: the button's own box is 44 px tall around the tag (the drawn tag keeps its size) */
+@media (pointer: coarse) {
+  .demo-tag { display: flex; align-items: center; height: 44px; top: calc((var(--top-h) - 44px) / 2); }
+  body:has(.embed) .demo-tag { top: 0; height: 44px; }
+}
 @media (prefers-reduced-motion: reduce) { .demo-slip { animation: hud-fade 120ms linear both; } }
 
 /* ------------------------------ the conserved rail (§7.22) ------------------------------ */
@@ -207,7 +213,11 @@ html:not([data-loaded]) body:has(.lights:not(.gone)) .conserved { z-index: 62; }
 }
 @media (max-width: 1099px) {
   html[data-tour] .first .hall-band { background: linear-gradient(0deg, rgba(15, 11, 9, 0.8) 0, rgba(15, 11, 9, 0) 96px); }
-  html[data-tour] .playbill { background: var(--ground-0); }
+  /* the playbill's ground is solid under its text and feathers out over 120 px below it, so when the tour scrolls
+     it up over the live hall there is no straight black edge cutting the 3D */
+  .playbill, html[data-tour] .playbill { background: none; isolation: isolate; }
+  .playbill::before { content: ""; position: absolute; z-index: -1; left: 0; right: 0; top: 0; bottom: -120px; background: var(--ground-0); pointer-events: none;
+    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 120px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 120px), transparent); }
 }
 @media (max-width: 767px) and (max-height: 820px) { .first .hall-band { height: clamp(200px, 32svh, 300px); } }
 
@@ -228,8 +238,12 @@ html:not([data-loaded]) body:has(.lights:not(.gone)) .conserved { z-index: 62; }
 .instr .curve .label + .label { margin-top: -5px; }
 .instr .stub-slot { margin-top: 24px; }
 .instr.has-stub .curve { display: none; }
-@media (min-width: 1280px) and (max-height: 860px) { .instr.has-stub .num-dial { font-size: 104px; } }
-.instr .tablet-line { display: none; }
+/* the viewer's round draws while the dial counts the next one: the receipt heads the column, the dial is "Next round" */
+.instr .stub-slot.top { margin: 0 0 24px; }
+.instr .rno.next { gap: 10px; }
+.instr .rno.next .label { font-size: 15px; color: var(--ink-2); }
+@media (min-width: 1280px) and (max-height: 860px) { .instr.has-stub .num-dial { font-size: 104px; } .instr.stub-top .num-dial { font-size: 88px; } .instr.stub-top .dial { margin-top: 16px; } .instr.stub-top .facts { margin-top: 20px; } }
+.instr .tablet-line, .instr .tablet-pot { display: none; }
 .instr .tablet-head { display: none; font: 800 15px/1.2 var(--font-sans); font-feature-settings: "ss01"; }
 /* the result, folded: a 56 px plate stub in the same column */
 .rs-stub { --r: var(--r-plate); display: flex; align-items: center; gap: 12px; min-height: 56px; margin-top: 18px; padding: 8px 8px 8px 16px; background: var(--ground-2); font: 600 14px/1.35 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink-2); text-shadow: none; }
@@ -246,14 +260,20 @@ html:not([data-loaded]) body:has(.lights:not(.gone)) .conserved { z-index: 62; }
   .instr .tablet-head { display: block; }
   .instr .num-dial { font-size: 64px; }
   .instr .dial { margin-top: 10px; }
-  .instr .tablet-line { display: block; margin-top: 10px; }
+  /* the pot stays a figure here, as on phones (24 px + its unit), with the players under it */
+  .instr .tablet-pot { display: grid; gap: 6px; margin-top: 14px; }
+  .instr .tablet-pot .num-m { font-size: 24px; }
   .instr .note { margin-top: 8px; font-size: 14px; }
   .instr .stub-slot { width: 300px; margin-left: calc(var(--instr-w) - 300px); margin-top: 12px; transform: scale(0.82); transform-origin: top right; }
+  /* scaled to 0.82 from its top right: give back the box's unscaled foot (about 0.18 of its ~260 px) */
+  .instr .stub-slot.top { margin: 0 0 -34px calc(var(--instr-w) - 300px); }
 }
 
 /* ------------------------------ /play: the dock (§7.5), one charcoal plate bottom centre ------------------------------ */
 
-.dock { --r: var(--r-plate); position: fixed; z-index: 20; left: calc(var(--gutter) + var(--chat-w) + var(--plate-in)); right: calc(var(--gutter) + var(--instr-w) + var(--plate-in)); bottom: calc(var(--rail-h) + 12px); display: grid; gap: 8px; padding: 10px 10px 8px; background: var(--ground-2); text-align: center; border-radius: calc(var(--r) * 0.66); }
+/* one height for every state (the open state's), the one-line states centred in it, so its top never jumps */
+.dock { --r: var(--r-plate); position: fixed; z-index: 20; left: calc(var(--gutter) + var(--chat-w) + var(--plate-in)); right: calc(var(--gutter) + var(--instr-w) + var(--plate-in)); bottom: calc(var(--rail-h) + 12px); display: grid; align-content: center; gap: 8px; min-height: 97px; padding: 10px 10px 8px; background: var(--ground-2); text-align: center; border-radius: calc(var(--r) * 0.66); }
+.dock > .fine .fs { display: none; }
 @supports (corner-shape: squircle) { .dock { corner-shape: squircle; border-radius: var(--r); } }
 .dock .row1 { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .dock .row1 .key.main { flex: 1; min-width: 0; height: 52px; padding: 0 16px; }
@@ -262,9 +282,12 @@ html:not([data-loaded]) body:has(.lights:not(.gone)) .conserved { z-index: 62; }
 /* the state lines: one line in the dock, never over the drum */
 .dock .line { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 52px; padding: 0 12px; font: 600 17px/1.35 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink); text-wrap: balance; }
 .dock .line.soft { font-size: 16px; color: var(--ink-2); }
+/* a wrapped state line stays one centred unit, its dot inline before the first line */
+.dock .line:not(.watch) { display: block; padding: 14px 16px; text-align: center; }
+.dock .line:not(.watch) .me-dot { margin-right: 10px; vertical-align: 0.04em; }
 .dock .line.watch { justify-content: space-between; padding: 0 0 0 12px; }
 .dock .line.watch .key.main { flex: none; height: 52px; }
-.dock .me-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--ink); }
+.dock .me-dot { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--ink); }
 .key .sol { white-space: pre; }
 /* narrow docks (1024-1279, or beside the result sheet): no "other", the key's unit drops */
 @media (max-width: 1279px) { .dock .stake { min-width: 50px; padding: 0 8px; font-size: 18px; } .dock .key.main .sub { display: none; } }
@@ -273,6 +296,9 @@ html:not([data-loaded]) body:has(.lights:not(.gone)) .conserved { z-index: 62; }
   body:has(.rsheet) .dock { right: calc(var(--rs-w, 440px) + var(--gutter) - var(--plate-in) + 16px); }
   body:has(.rsheet) .dock .stake.other, body:has(.rsheet) .dock .other-in { display: none; }
   body:has(.rsheet) .dock .key.main .sol { display: none; }
+  /* the narrowed dock keeps its fee line on one line: the short form */
+  body:has(.rsheet) .dock > .fine .fl { display: none; }
+  body:has(.rsheet) .dock > .fine .fs { display: inline; }
 }
 
 /* ------------------------------ the entry receipt (§7.6): a cream "yours" plate ------------------------------ */
@@ -281,6 +307,10 @@ html:not([data-loaded]) body:has(.lights:not(.gone)) .conserved { z-index: 62; }
 .stub .hd { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .stub .hd b { font: 800 18px/1.2 var(--font-sans); font-feature-settings: "ss01"; color: var(--on-cream); }
 .stub .hd span { font: 600 14px/1.3 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--on-cream-2); white-space: nowrap; }
+/* its round's state once sealed: the state tag, inverted on cream */
+.stub .hd .st, .stub-strip .st { --r: var(--r-state); display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: calc(var(--r) * 0.66); background: var(--on-cream); color: var(--ink); font: 800 13px/1 var(--font-sans); font-feature-settings: "ss01"; white-space: nowrap; animation: state-in 160ms var(--ease-out) both; }
+@supports (corner-shape: squircle) { .stub .hd .st, .stub-strip .st { corner-shape: squircle; border-radius: var(--r); } }
+.stub .rn { margin-top: -6px; font: 600 14px/1.3 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--on-cream-2); }
 .stub dl { margin: 0; display: grid; }
 .stub dl div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font: 600 14px/22px var(--font-sans); font-variant-numeric: tabular-nums; }
 .stub dl dt { color: var(--on-cream-2); white-space: nowrap; }
@@ -302,12 +332,19 @@ html:not([data-loaded]) body:has(.lights:not(.gone)) .conserved { z-index: 62; }
 .presence { display: flex; flex: none; padding-left: 2px; }
 .presence span { position: relative; display: grid; place-items: center; width: 28px; height: 28px; margin-right: -8px; overflow: hidden; border-radius: 50%; background: var(--ground-3); box-shadow: 0 0 0 2px var(--ground-2); }
 .presence img { width: 34px; height: 34px; object-fit: cover; object-position: 50% 30%; display: block; }
+/* a disc whose portrait is still on its way holds the player's colour dot (never an empty circle) */
+.presence span > *, .ln .face > * { grid-area: 1 / 1; }
+.presence .wait img, .ln .face.wait img { opacity: 0; }
 .who .n { margin-left: 18px; display: grid; gap: 1px; min-width: 0; font: 600 13px/1.25 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink-2); }
 .who .n small { font-size: 13px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rchat-log { position: relative; overflow-anchor: none; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 7px; padding: 0 2px; scrollbar-width: none; -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 56px); mask-image: linear-gradient(180deg, transparent 0, #000 56px); }
 .rchat-log::-webkit-scrollbar { display: none; }
 .rchat-log .spacer { flex: 1; }
-.rchat-log > .ln { flex-shrink: 0; }
+/* the rows in one box: RoomChat watches its height and keeps a pinned log on its newest line */
+.rchat-rows { flex-shrink: 0; display: flex; flex-direction: column; gap: 7px; }
+.rchat-rows > .ln { flex-shrink: 0; }
+/* the newest rows are always laid out at their real height (a placeholder height would leave the newest line cut) */
+.rchat-rows > .ln:nth-last-child(-n + 16) { content-visibility: visible; }
 .ln { content-visibility: auto; contain-intrinsic-size: auto 24px; display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 9px; align-items: start; font: 450 15px/1.42 var(--font-sans); color: var(--ink-2); overflow-wrap: anywhere; animation: ln-in 160ms var(--ease-out) both; }
 @keyframes ln-in { from { opacity: 0; transform: translateY(6px); } }
 .ln .face { display: grid; place-items: center; width: 24px; height: 24px; margin-top: -1px; overflow: hidden; border-radius: 50%; background: var(--ground-3); }
@@ -372,12 +409,17 @@ html:not([data-loaded]) body:has(.lights:not(.gone)) .conserved { z-index: 62; }
 
 /* ------------------------------ the result sheet (§7.12) ------------------------------ */
 
-.rsheet { --r: var(--r-plate); position: fixed; z-index: 20; top: calc(var(--top-h) + 12px); right: calc(var(--gutter) - var(--plate-in)); bottom: calc(var(--rail-h) + 12px); width: var(--rs-w, 440px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 22px 24px; background: var(--ground-2); border-radius: calc(var(--r) * 0.66); display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 18px; animation: rs-in 280ms var(--ease-out) both; }
+/* it hugs its content (no empty charcoal under a short list) and scrolls inside past the rail's edge */
+.rsheet { --r: var(--r-plate); position: fixed; z-index: 20; top: calc(var(--top-h) + 12px); right: calc(var(--gutter) - var(--plate-in)); bottom: auto; max-height: calc(100dvh - var(--top-h) - var(--rail-h) - 24px); width: var(--rs-w, 440px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 22px 24px; background: var(--ground-2); border-radius: calc(var(--r) * 0.66); display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 18px; animation: rs-in 280ms var(--ease-out) both; }
 @supports (corner-shape: squircle) { .rsheet { border-radius: var(--r); } }
 @keyframes rs-in { from { opacity: 0; transform: translateX(16px); } }
 .rsheet .x { position: absolute; right: 16px; top: 16px; }
 .rsheet .rhd { display: grid; gap: 6px; padding-right: 44px; }
 .rsheet .rhd .label { color: var(--ink-2); }
+/* the live round under the head: the countdown stays in sight while the sheet covers the instruments */
+.rsheet .rhd .label.live { color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the share plate takes this sheet's own place */
+.rsheet.sharing { visibility: hidden; }
 @media (min-width: 1024px) { body:has(.rsheet) .instr { visibility: hidden; } }
 .rsheet .mine { display: grid; gap: 4px; padding: 16px 18px; }
 .rsheet .mine .label { font-weight: 700; color: var(--on-cream-2); }
@@ -387,11 +429,14 @@ html:not([data-loaded]) body:has(.lights:not(.gone)) .conserved { z-index: 62; }
 .rsheet .mine .sold { font: 800 15px/1.4 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--on-cream); }
 .rsheet .mine .confirm { display: grid; gap: 10px; margin-top: 8px; }
 .rsheet .mine .confirm p { font: 600 14.5px/1.4 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--on-cream); }
+/* while confirming, the confirm line says it all: the sub line steps aside */
+.rsheet .mine.confirming > .sub { display: none; }
 /* the two equal alternatives side by side */
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
 .pair .key { min-width: 0; height: auto; min-height: 44px; padding: 6px 8px; font-size: 15px; line-height: 1.15; white-space: normal; text-align: center; text-wrap: balance; }
+.pair .key .sm { display: none; }
+@media (max-width: 1023px) { .pair .key .lg { display: none; } .pair .key .sm { display: inline; } .pair .key { padding: 6px 6px; } }
 .rsheet .spect { display: grid; gap: 8px; }
-.rsheet .spect .fact { margin-top: 4px; }
 .rsheet .lhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .rsheet .lhead .title { font-size: 16px; }
 .rsheet .lhead .act { font-size: 14px; }
@@ -412,16 +457,22 @@ html:not([data-loaded]) body:has(.lights:not(.gone)) .conserved { z-index: 62; }
 /* a narrower sheet (measured against the drum) lists the players in one column, never truncating a name */
 .rsheet { container-type: inline-size; }
 @container (max-width: 359px) { .rsheet .rlist:not(.long) { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; } }
-/* 768-1023: a band above the dock */
+/* 768-1023: a band above the dock, one column (head, scoop, list head, list, sums), its top kept under the drum's
+   base (about a third of the height), scrolling inside with the 24 px mask at its foot */
 @media (min-width: 768px) and (max-width: 1023px) {
-  .rsheet { top: auto; left: var(--gutter); right: var(--gutter); width: auto; bottom: calc(var(--rail-h) + var(--dock-h, 128px) + 24px); max-height: min(40vh, 380px); grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px 28px; animation-name: rs-up; }
-  .rsheet > .rhd { grid-column: 1 / -1; }
-  .rsheet .rlist:not(.long) { grid-auto-flow: column; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(var(--rows, 8), auto); }
+  .rsheet { top: auto; left: var(--gutter); right: var(--gutter); width: auto; bottom: calc(var(--rail-h) + var(--dock-h, 128px) + 24px); max-height: min(calc(100dvh - var(--top-h) - var(--dock-h, 128px) - var(--rail-h) - 48px), 33dvh); grid-template-columns: minmax(0, 1fr); gap: 14px; animation-name: rs-up;
+    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 24px), transparent); padding-bottom: 28px; }
+  /* the band scrolls as a whole: the list never scrolls inside it (two columns across the full width, whatever its length) */
+  .rsheet .rlist, .rsheet .rlist.long { grid-auto-flow: column; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(var(--rows, 8), auto); column-gap: 24px; max-height: none; overflow: visible; padding-bottom: 0; -webkit-mask-image: none; mask-image: none; }
+  .rsheet .rlist li { grid-template-columns: 8px minmax(64px, 1fr) auto auto; gap: 0 8px; }
+  .rsheet .mine { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 20px; align-items: center; }
+  .rsheet .mine > .label, .rsheet .mine > .num-l, .rsheet .mine > .sub, .rsheet .mine > .sold { grid-column: 1; }
+  .rsheet .mine > .pair, .rsheet .mine > .confirm { grid-column: 2; grid-row: 1 / span 3; margin-top: 0; }
 }
 @keyframes rs-up { from { opacity: 0; transform: translateY(8px); } }
 /* phones: a bottom sheet from under the top bar to the rail */
 @media (max-width: 767px) {
-  .rsheet { top: calc(var(--top-h) + 8px); left: 8px; right: 8px; bottom: calc(var(--rail-h) + 8px); width: auto; padding: 20px 16px; animation-name: rs-up; }
+  .rsheet { top: calc(var(--top-h) + 8px); left: 8px; right: 8px; bottom: calc(var(--rail-h) + 8px); max-height: none; width: auto; padding: 20px 16px; animation-name: rs-up; }
   .rsheet .mine .num-l { font-size: 40px; }
 }
 
@@ -434,12 +485,16 @@ body:has(.sheet-backdrop) :is(.playbill, .hud-root, .pplay, .tb) .key.main { bac
 .sheet { --r: var(--r-plate); position: fixed; right: 24px; top: 24px; bottom: calc(var(--rail-h) + 12px); z-index: 31; width: min(480px, calc(100vw - 48px)); display: flex; flex-direction: column; overflow: hidden; background: var(--ground-2); border-radius: calc(var(--r) * 0.66); animation: sheet-in 260ms var(--ease-out) both; }
 @supports (corner-shape: squircle) { .sheet { border-radius: var(--r); } }
 .sheet.narrow { width: min(440px, calc(100vw - 48px)); }
+/* the wallet step is short: the plate ends under its last line (no half-empty plate down to the rail) */
+.sheet:has(.wal-rows) { bottom: auto; max-height: calc(100dvh - var(--rail-h) - 36px); }
+.sheet:has(.wal-rows) .scroll { flex: 0 1 auto; }
 .sheet.out { animation: sheet-out 160ms var(--ease-in) both; }
 @keyframes sheet-in { from { opacity: 0; transform: translateX(16px); } }
 @keyframes sheet-out { to { opacity: 0; transform: translateX(16px); } }
-.sheet .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 26px 28px 20px; display: grid; align-content: start; gap: 20px; scrollbar-width: thin; }
-/* merge: when the step is taller than the sheet, its foot fades into the plate (inside the 20 px padding when it fits), so the cut reads as "scrolls", never as clipped */
-.sheet .scroll { -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 20px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 20px), transparent); }
+.sheet .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 26px 28px 24px; display: grid; align-content: start; gap: 20px; scrollbar-width: thin; }
+/* the scroll area ends above the footer band (never under it); its foot fades into the plate only while more of it
+   is below (ProfileFlow sets .more), so a step that fits is never faded and a step that scrolls reads as scrolling */
+.sheet .scroll.more { -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 40px), transparent); }
 .sheet .x { position: absolute; right: 20px; top: 20px; z-index: 2; }
 .sheet .bottom { padding: 14px 28px 18px; background: var(--ground-2); display: grid; gap: 10px; }
 .sheet .bottom .fine, .sheet .bottom .reason { text-align: center; text-wrap: balance; }
@@ -456,8 +511,10 @@ body:has(.sheet-backdrop) :is(.playbill, .hud-root, .pplay, .tb) .key.main { bac
 .wal-row { --r: var(--r-key); display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 0 18px; border: 0; border-radius: calc(var(--r) * 0.66); background: var(--ground-3); color: var(--ink); text-align: left; text-decoration: none; cursor: pointer; font: 700 17px/1.2 var(--font-sans); transition: background-color var(--dur-1) var(--ease-out); }
 @supports (corner-shape: squircle) { .wal-row { corner-shape: squircle; border-radius: var(--r); } }
 .wal-row:hover { background: var(--ground-4); }
+/* every row keeps one 28 px mark slot, so the names start on one line */
 .wal-row > img { width: 28px; height: 28px; flex: none; border-radius: var(--r-state); }
-.wal-row .mk { display: grid; place-items: center; width: 32px; height: 32px; flex: none; margin-left: -2px; border-radius: 50%; background: var(--ground-2); }
+.wal-row .mk { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 50%; background: var(--ground-2); }
+.wal-row .mk.ini { font: 700 13px/1 var(--font-sans); color: var(--ink-2); }
 .wal-row .nm { flex: 1; min-width: 0; }
 .wal-row .label { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 .wal-row .label.go { font-weight: 700; color: var(--ink-2); }
@@ -476,12 +533,39 @@ body:has(.sheet-backdrop) :is(.playbill, .hud-root, .pplay, .tb) .key.main { bac
 .species button:hover { background: var(--ground-4); }
 .species button[aria-checked="true"] { background: var(--ink); }
 .species button img { width: 60px; height: 60px; object-fit: cover; object-position: 50% 30%; display: block; }
+/* until its portrait is decoded, a tile holds the species' initial */
+.species button > * { grid-area: 1 / 1; }
+.species button .ini { font: 700 15px/1 var(--font-sans); color: var(--ink-3); text-transform: none; }
+.species button[aria-checked="true"] .ini { color: var(--on-cream-2); }
 .swatches { display: flex; gap: 8px; }
 .swatches button { --r: var(--r-key-xs); position: relative; width: 38px; height: 38px; padding: 0; border: 0; border-radius: calc(var(--r) * 0.66); background: var(--pc); cursor: pointer; }
 @supports (corner-shape: squircle) { .swatches button { border-radius: var(--r); } }
 .swatches button[aria-checked="true"] { box-shadow: 0 0 0 3px var(--ground-2), 0 0 0 5px var(--ink); }
 .gen-block { display: grid; gap: 6px; }
 .gen-block .num-l { font-size: 34px; }
+/* under 860 px of height the character step fits without scrolling: a 140 felt well, 44 tiles, tighter gaps,
+   and Genesis on one line ("Genesis · No. 0423") over its note */
+@media (max-height: 859px) and (min-width: 480px) {
+  .sheet .scroll { padding-top: 22px; gap: 14px; }
+  .pick { grid-template-columns: 140px minmax(0, 1fr); }
+  .pedestal { width: 140px; height: 140px; }
+  .species { grid-template-columns: repeat(4, 44px); gap: 7px; }
+  .species button { width: 44px; height: 44px; }
+  .species button img { width: 52px; height: 52px; }
+  .sheet .swatches button { width: 34px; height: 34px; }
+  .gen-block { grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 8px; row-gap: 4px; }
+  .gen-block > .label::after { content: " ·"; }
+  .gen-block .num-l { font-size: 24px; font-weight: 800; letter-spacing: -0.012em; }
+  .gen-block > .fine { grid-column: 1 / -1; }
+  .sheet .bottom { padding-top: 12px; padding-bottom: 14px; gap: 8px; }
+}
+@media (max-height: 859px) and (max-width: 479px) {
+  .sheet .pick .pedestal { height: 140px; }
+  .gen-block { grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 8px; row-gap: 4px; }
+  .gen-block > .label::after { content: " ·"; }
+  .gen-block .num-l { font-size: 24px; font-weight: 800; letter-spacing: -0.012em; }
+  .gen-block > .fine { grid-column: 1 / -1; }
+}
 @media (max-width: 479px) {
   .pick { grid-template-columns: minmax(0, 1fr); }
   .pick .pedestal { width: 100%; height: 180px; }
@@ -492,12 +576,21 @@ body:has(.sheet-backdrop) :is(.playbill, .hud-root, .pplay, .tb) .key.main { bac
 /* the share card: the card's own ratio until the image is drawn */
 .share-prev { width: 100%; height: auto; aspect-ratio: 1200 / 630; display: block; background: var(--ground); border-radius: calc(var(--r-cream) * 0.66); }
 @supports (corner-shape: squircle) { .share-prev { corner-shape: squircle; border-radius: var(--r-cream); } }
-.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.trio .key { min-width: 0; padding: 0 8px; font-size: 15px; }
-.sheet.share { top: auto; max-height: calc(100dvh - var(--rail-h) - 36px); }
+/* Copy link | Post on X, then Download image at full width */
+.trio { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.trio .key { min-width: 0; padding: 0 12px; font-size: 15px; }
+.trio .key.dl { grid-column: 1 / -1; }
+.sheet .copy-how:empty { display: none; }
+.sheet .copy-how { margin-top: -8px; color: var(--ink-2); }
+.share-text .share-link { color: var(--ink-2); font-weight: 600; overflow-wrap: anywhere; }
+/* desktop: in the result sheet's own box (same top, same column), hugging its content */
+.sheet.share { top: calc(var(--top-h) + 12px); bottom: auto; right: calc(var(--gutter) - var(--plate-in)); width: min(var(--rs-w, 440px), calc(100vw - 48px)); max-height: calc(100dvh - var(--top-h) - var(--rail-h) - 24px); }
 .sheet.share .scroll { flex: 0 1 auto; }
+@media (min-width: 768px) and (max-width: 1023px) { .sheet.share { top: auto; bottom: calc(var(--rail-h) + 12px); right: 24px; width: min(440px, calc(100vw - 48px)); } }
 @media (max-width: 767px) {
   .sheet, .sheet.narrow { left: 8px; right: 8px; top: calc(var(--top-h) + 8px); bottom: calc(var(--rail-h) + 8px); width: auto; animation-name: sheet-up; }
+  /* verify r2: the share sheet hugs its content on phones too (the line above, later and as specific, stretched it to the rail) */
+  .sheet.narrow.share { bottom: auto; max-height: calc(100dvh - var(--top-h) - var(--rail-h) - 16px); }
   .sheet .scroll { padding: 22px 18px 16px; }
   .sheet .bottom { padding: 12px 18px 16px; }
   .sheet .x { right: 12px; top: 14px; }
@@ -517,7 +610,7 @@ body:has(.sheet-backdrop) :is(.playbill, .hud-root, .pplay, .tb) .key.main { bac
 @media (max-width: 767px) { .rchat, .instr, .dock { display: none !important; } }
 /* one screen tall: the hall band gives way (down to 120 px) when the receipt or a long dock needs the room */
 .pplay { position: relative; z-index: 10; display: flex; flex-direction: column; height: calc(100dvh - var(--rail-h)); padding-top: var(--top-h); }
-.pplay .plow { display: flex; flex-direction: column; padding-top: 10px; background: var(--ground-0); }
+.pplay .plow { display: flex; flex-direction: column; padding-top: 8px; background: var(--ground-0); }
 .pplay .plow > * { flex-shrink: 0; }
 .pplay > * { flex-shrink: 0; }
 /* the round band: 92 px, solid, three columns and the stem */
@@ -529,85 +622,94 @@ body:has(.sheet-backdrop) :is(.playbill, .hud-root, .pplay, .tb) .key.main { bac
 .pplay .strip .num-dial { font-size: 60px; line-height: 0.8; }
 .pplay .strip .r .num-m { font-size: 24px; }
 .pplay .strip .label { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
-.pplay .stem-wrap { padding: 4px 16px 12px; background: var(--ground); }
-.pplay .pnote { padding: 8px 16px; background: var(--ground); font: 600 14px/1.35 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: center; }
-.pplay .pnote .key { margin-left: 8px; vertical-align: middle; }
+/* verify r2: under 360 px (small phones, a narrow host iframe) the band stays inside its width: fluid columns, a smaller dial and pot, labels may wrap */
+@media (max-width: 359.98px) {
+  .pplay .strip { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); padding-inline: 12px; }
+  .pplay .strip > * { min-width: 0; }
+  .pplay .strip .num-dial { font-size: clamp(40px, 13vw, 60px); }
+  .pplay .strip .r .num-m { font-size: 20px; }
+  .pplay .strip .label { white-space: normal; line-height: 1.2; }
+}
+.pplay .stem-wrap { padding: 4px 16px 10px; background: var(--ground); }
+/* one 34 px row under the stem: the text on one line (ellipsis), Open at its right */
+.pplay .pnote { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 16px 4px; background: var(--ground); font: 600 14px/1.3 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.pplay .pnote .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pplay .pnote:not(:has(.key)) .t { text-align: center; }
+.pplay .pnote .key { flex: none; }
 .pplay .hall-band { flex: 1 1 auto; height: clamp(180px, 30svh, 300px); min-height: 120px; }
 .pplay > .hall-band { flex-shrink: 1; }
-.pplay .pchat { --r: var(--r-plate); margin: 0 10px; padding: 14px 14px 12px; background: var(--ground-2); border-radius: calc(var(--r) * 0.66); display: grid; gap: 8px; }
+.pplay .pchat { --r: var(--r-plate); margin: 0 10px; padding: 12px 12px 10px; background: var(--ground-2); border-radius: calc(var(--r) * 0.66); display: grid; gap: 6px; }
 @supports (corner-shape: squircle) { .pplay .pchat { border-radius: var(--r); } }
-.pplay .pchat .rchat-log { max-height: 116px; -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 22px); mask-image: linear-gradient(180deg, transparent 0, #000 22px); gap: 5px; }
+/* the last 3 lines (at most one of them a room notice: RoomChat picks them) */
+.pplay .pchat .rchat-log { max-height: 96px; -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 16px); mask-image: linear-gradient(180deg, transparent 0, #000 16px); }
+.pplay .pchat .rchat-rows { gap: 5px; }
 /* the last lines, each at most two lines high (the whole text is in the full chat) */
 .pplay .pchat .ln { font-size: 14.5px; content-visibility: visible; }
 .pplay .pchat .ln > .tx, .pplay .pchat .ln > span:last-child { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .pplay .pchat .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-height: 28px; background: none; border: 0; padding: 0 2px; color: inherit; text-align: left; width: 100%; cursor: pointer; }
 .pplay .pchat .rchat-in { margin-top: 2px; }
-.pplay .pdock { padding: 10px 10px 8px; display: grid; gap: 8px; background: var(--ground-0); }
+.pplay .pdock { padding: 8px 10px 8px; display: grid; gap: 6px; background: var(--ground-0); }
 .pplay .pdock .fine { text-align: center; text-wrap: balance; }
-.pdock .row1 { display: grid; gap: 8px; }
-.pdock .line { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; font: 600 15px/1.35 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink); text-align: center; text-wrap: balance; }
+.pdock .row1 { display: grid; gap: 6px; }
+/* a state line, centred as one unit: the dot sits inline before the text's first line */
+.pdock .line { display: block; padding: 11px 8px; font: 600 15px/1.4 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink); text-align: center; text-wrap: balance; }
 .pdock .line.soft { color: var(--ink-2); }
 .pdock .line.watch { display: none; }
-.pdock .me-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--ink); }
+.pdock .me-dot { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; background: var(--ink); vertical-align: 0.02em; }
+/* phones: the receipt is a 40 px cream strip from the start; a tap opens it over the chat, out of the page flow */
+.pplay .pstub { padding-bottom: 10px; }
+.pplay .stub-wrap { position: relative; }
 .pplay .stub { max-width: none; }
-.pplay .stub-strip { display: flex; align-items: center; justify-content: center; height: 40px; width: 100%; padding: 0 12px; border: 0; border-radius: calc(var(--r-key-s) * 0.66); background: var(--ink); color: var(--on-cream); font: 700 14px/1 var(--font-sans); font-variant-numeric: tabular-nums; cursor: pointer; }
+.pplay .stub.over { position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 25; }
+.pplay .stub-strip { --r: var(--r-key-s); display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 40px; width: 100%; padding: 0 8px 0 14px; border: 0; border-radius: calc(var(--r) * 0.66); background: var(--ink); color: var(--on-cream); font: 700 14px/1 var(--font-sans); font-variant-numeric: tabular-nums; cursor: pointer; text-align: left; }
+@supports (corner-shape: squircle) { .pplay .stub-strip { corner-shape: squircle; border-radius: var(--r); } }
+.pplay .stub-strip .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pplay .stub-strip:not(:has(.st)) { justify-content: center; }
 /* the full chat: between the top bar and the rail (RoomChat sets its height from the visual viewport) */
 .pchat-full { position: fixed; left: 0; right: 0; top: var(--top-h); z-index: 31; display: flex; flex-direction: column; padding: 14px 16px 12px; background: var(--ground-2); }
 .pchat-full .pchat-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .pchat-full .pchat-top .rchat-head { flex: 1; min-width: 0; }
 .pchat-full .rchat-log { flex: 1; -webkit-mask-image: none; mask-image: none; }
 
-/* ------------------------------ the loader: Lights up (§7.25) ------------------------------ */
+/* ------------------------------ the loader: close on the drum (v21.2) ------------------------------ */
 
-.lights { position: fixed; inset: 0; z-index: 60; overflow: hidden; background: var(--ground-0); transition: background-color 600ms var(--ease-out); }
+/* the loader is the hall: a still of the close shot holds the first frames, then dissolves into the live canvas */
+.lights { position: fixed; inset: 0; z-index: 60; overflow: hidden; background: var(--ground-0); transition: background-color 700ms var(--ease-out); }
+.lights.live { background-color: rgba(15, 11, 9, 0); }
 html[data-loaded="1"] .lights { display: none; }
-.lights .cone { position: absolute; inset: 0; background: radial-gradient(ellipse 40% 70% at 50% 0, rgba(255, 226, 168, 0.16), transparent 70%); pointer-events: none; transition: opacity 600ms; }
-.lights .rod { position: absolute; left: 0; right: 0; top: 24px; height: 2px; background: #C99A4B; z-index: 2; transition: opacity 600ms; }
-.lights .curtain { position: absolute; top: 25px; bottom: var(--rail-h); width: 20%; z-index: 1; --fold: 270deg; background-color: var(--oxblood-700); background-image:
-    linear-gradient(0deg, rgba(0, 0, 0, 0.5) 0, rgba(0, 0, 0, 0.32) 38px, rgba(255, 214, 180, 0.1) 40px, rgba(0, 0, 0, 0) 43px),
-    linear-gradient(var(--fold), rgba(0, 0, 0, 0.45) 0, rgba(0, 0, 0, 0.22) 20px, rgba(0, 0, 0, 0) 28px, rgba(255, 220, 200, 0.12) 36px, rgba(0, 0, 0, 0) 48px),
-    linear-gradient(180deg, rgba(255, 210, 160, 0.06), rgba(15, 11, 9, 0) 30%, rgba(15, 11, 9, 0.45)),
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.55) 0, rgba(255, 220, 200, 0.08) 15px, rgba(0, 0, 0, 0.12) 24px, rgba(0, 0, 0, 0.55) 38px),
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0.22) 31px, rgba(255, 220, 200, 0.05) 47px, rgba(0, 0, 0, 0) 61px),
-    linear-gradient(rgba(74, 20, 24, 0.72), rgba(74, 20, 24, 0.72)),
-    url("/assets/textures/ui-v21/velvet-oxblood.webp");
-  background-size: auto, auto, auto, 100% 100%, 100% 100%, auto, 512px; transition: transform 900ms var(--ease-curtain); }
-.lights .curtain.l { left: 0; }
-.lights .curtain.r { right: 0; --fold: 90deg; }
-.lights .curtain .rings { position: absolute; left: 8%; right: 8%; top: -7px; height: 12px; display: flex; justify-content: space-between; pointer-events: none; }
-.lights .curtain .rings i { width: 12px; height: 12px; background: radial-gradient(circle closest-side, transparent 58%, #EBC985 62%, #C99A4B 78%, #6E5228 92%, transparent 100%); }
-.lights .stack { position: absolute; left: 0; right: 0; top: 30vh; z-index: 3; display: grid; justify-items: center; text-align: center; padding: 0 16px; transition: opacity 320ms var(--ease-out), transform 320ms var(--ease-out); }
-.lights .word { position: relative; height: 96px; width: auto; overflow: visible; }
-.lights .word svg { display: block; height: 96px; width: auto; overflow: visible; }
-.lights .ball-drop { transform-box: fill-box; transform-origin: 50% 100%; animation: ball-drop 480ms linear both; }
-.lights .ball-drop.still { animation: none; }
-@keyframes ball-drop { 0% { transform: translateY(-40px); animation-timing-function: var(--ease-in); } 58% { transform: translateY(0) scaleY(1); animation-timing-function: var(--ease-out); } 75% { transform: translateY(0) scaleY(0.94); animation-timing-function: var(--ease-out); } 100% { transform: translateY(0) scaleY(1); } }
-.lights .stem-row { margin-top: 36px; display: flex; align-items: center; gap: 16px; width: min(420px, calc(100vw - 32px)); }
-.lights .stem-row .stem { flex: 1; }
-.lights .count { display: inline-flex; align-items: baseline; gap: 4px; flex: none; min-width: 74px; justify-content: flex-end; }
-.lights .count .num-m { font-size: 30px; }
-.lights .count small { font: 800 17px/1 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink-3); }
-.lights .status { margin-top: 22px; max-width: 46ch; text-wrap: balance; }
-.lights .facts-line { margin-top: 8px; min-height: 19px; color: var(--ink-2); text-wrap: balance; }
-.lights .peek { position: absolute; left: calc(20% - 40px); bottom: calc(var(--rail-h) + 24px); z-index: 2; height: 120px; width: auto; opacity: 0; transform: translateX(-24px); transition: opacity 400ms var(--ease-out), transform 600ms var(--ease-out); }
-.lights .peek.on { opacity: 1; transform: none; }
+.lights .still, .lights .still img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* the still is shot wider than any screen (2.4:1, 0.56:1 on phones), so a cover fit crops only the sides, like the live lens */
+.lights .still img { object-fit: cover; object-position: 50% 50%; transition: opacity 700ms var(--ease-out); }
+.lights.live .still img { opacity: 0; }
+.lights .shade { position: absolute; inset: 0; pointer-events: none; transition: opacity 800ms var(--ease-out);
+  background: linear-gradient(0deg, rgba(15, 11, 9, 0.94) 0, rgba(15, 11, 9, 0.78) calc(var(--rail-h) + 150px), rgba(15, 11, 9, 0) calc(var(--rail-h) + 340px)),
+    radial-gradient(ellipse 85% 75% at 50% 42%, rgba(15, 11, 9, 0) 55%, rgba(15, 11, 9, 0.55) 100%); }
+.lights .stack { position: absolute; left: 0; right: 0; bottom: calc(var(--rail-h) + 44px); z-index: 2; display: grid; justify-items: center; text-align: center; padding: 0 16px; transition: opacity 360ms var(--ease-out), transform 480ms var(--ease-out); }
+.lights .word svg { display: block; height: 58px; width: auto; overflow: visible; }
+.lights .word .socket { fill: none; stroke: rgba(246, 238, 227, 0.4); stroke-width: 2.5; }
+.lights .word .soup { fill: var(--saffron); transform-box: fill-box; transform-origin: 50% 100%; transition: transform 520ms var(--ease-out); }
+.lights.full .word .soup { animation: ldl-set 420ms var(--ease-out); }
+@keyframes ldl-set { 0% { opacity: 1; } 35% { opacity: 0.75; } 100% { opacity: 1; } }
+.lights.full .word svg { animation: ldl-tok 420ms var(--ease-out); }
+@keyframes ldl-tok { 0% { transform: none; } 30% { transform: translateY(2px) scaleY(0.97); } 100% { transform: none; } }
+.lights.reduced .word svg, .lights.reduced .word .soup { animation: none; transition: none; }
+.lights .status { margin-top: 18px; max-width: 46ch; color: var(--ink); text-wrap: balance; text-shadow: var(--halo); }
+.lights .facts-line { margin-top: 6px; min-height: 19px; color: var(--ink-2); text-wrap: balance; font-variant-numeric: tabular-nums; text-shadow: var(--halo); }
 .lights.exit .stack { opacity: 0; transform: translateY(-16px); }
-.lights.open { background-color: rgba(15, 11, 9, 0); }
-.lights.open .curtain.l { transform: translateX(-100%); }
-.lights.open .curtain.r { transform: translateX(100%); }
-.lights.open .cone, .lights.open .rod, .lights.open .peek { opacity: 0; }
-.lights.fade { opacity: 0; transition: opacity 300ms linear; }
-.lights.gone { display: none; }
+.lights.exit .shade { opacity: 0; }
+.lights.exit { pointer-events: none; }
+.lights.reduced.exit { opacity: 0; transition: opacity 300ms linear; }
+/* while the lamps are down the room carries no labels: the HUD scrims and the name tags come in with the lights */
+html[data-lit="0"] .hall-scrims, html[data-lit="0"] .hall-tags, html[data-lit="0"] .tb { opacity: 0; }
+.hall-scrims { transition: opacity 900ms var(--ease-out); }
+html[data-lit] .tb { transition: opacity 600ms var(--ease-out); }
+/* phones and the stacked home: the close shot fills the screen (CameraRig drops the band while it holds), so the playbill's ground waits too */
+html[data-lit="0"] .playbill::before, html[data-lit="0"] .first .hall-band { opacity: 0; }
+.playbill::before, .first .hall-band { transition: opacity 600ms var(--ease-out); }
 @media (max-width: 767px) {
-  .lights .word, .lights .word svg { height: 64px; }
-  .lights .stem-row { width: min(280px, calc(100vw - 112px)); flex-direction: column; align-items: stretch; gap: 12px; }
-  .lights .stem-row .stem { flex: none; width: 100%; }
-  .lights .count { justify-content: center; }
-  .lights .status, .lights .facts-line { max-width: calc(100vw - 112px); }
-  .lights .curtain .rings { left: 14%; right: 14%; }
-  .lights .curtain .rings i:nth-child(2) { display: none; }
-  .lights .curtain { width: 12%; }
-  .lights .peek { left: 12%; height: 96px; }
+  .lights .stack { bottom: calc(var(--rail-h) + 28px); }
+  .lights .word svg { height: 44px; }
+  .lights .status, .lights .facts-line { max-width: calc(100vw - 48px); }
 }
 
 /* ------------------------------ the footer (§7.24) ------------------------------ */

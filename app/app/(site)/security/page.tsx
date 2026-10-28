@@ -15,6 +15,8 @@ export const metadata: Metadata = { title: "Security" };
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const pct = (s: string) => s.replace("%", " %");
+/** Every section title ends with a full stop, as on the other pages. */
+const dot = (s: string) => (/[.?!]$/.test(s) ? s : `${s}.`);
 
 /**
  * /security (v21.1, §7.23): SECURITY.md as a house document in eleven
@@ -84,7 +86,16 @@ export default async function SecurityPage() {
     { id: "authority", label: t("about.authority") }, { id: "checks", label: t("checks.title") }, { id: "risks", label: t("risks.title") },
     { id: "architecture", label: t("arch.title") }, { id: "limits", label: t("sec.limTitle") },
   ];
-  const formula = `vrf_seed = sha256("pulled:vrf:v1" ‖ window ‖ close_slot ‖ entry_count ‖ entries_commitment)\nroll_i   = sha256(seed ‖ owner_i ‖ index_i)  →  floor(10001 · u³)`;
+  // laid out in short lines (36 columns at most), so it reads whole in the well on a phone as on a desktop
+  const formula = [
+    `vrf_seed = sha256("pulled:vrf:v1"`,
+    `    ‖ window ‖ close_slot`,
+    `    ‖ entry_count`,
+    `    ‖ entries_commitment)`,
+    `roll_i = sha256(seed ‖ owner_i`,
+    `    ‖ index_i)`,
+    `  → floor(10001 · u³)`,
+  ].join("\n");
 
   return (
     <>
@@ -105,12 +116,12 @@ export default async function SecurityPage() {
 
       <Sec id="cannot" labelledBy="cn-h">
         <div className="pg-split">
-          <div className="c5 pg-col">
+          <div className="c4 pg-col">
             <SecHead n={2} id="cn-h">{P.sec.cannotTitle}</SecHead>
             <p className="body">{t("sec.cannotIntro", { n: ins.value })}</p>
             <p className="fine">{cap(t("cannot.authority"))}: {t("cannot.authorityStatus", { h: tl.value })} · <a className="pg-a" href={SECURITY_HREF} target="_blank" rel="noreferrer">SECURITY.md<Arr c="↗" /></a></p>
           </div>
-          <div className="c7 pg-col pg-col-r">
+          <div className="c8 pg-col pg-col-r">
             <Notes items={cannot.map((c) => <b key={c}>{cap(c)}.</b>)} />
           </div>
         </div>
@@ -118,19 +129,19 @@ export default async function SecurityPage() {
 
       <Sec id="steps" labelledBy="sp-h">
         <div className="pg-split">
-          <div className="c5 pg-col">
+          <div className="c4 pg-col">
             <SecHead n={3} id="sp-h">{P.sec.stepsTitle}</SecHead>
             <p className="body">{t("how.sub2")}</p>
             <p className="fine"><a className="pg-a" href={GITHUB_MECHANICS} target="_blank" rel="noreferrer">docs/MECHANICS.md<Arr c="↗" /></a></p>
           </div>
-          <div className="c7 pg-col pg-col-r"><Steps rows={steps} /></div>
+          <div className="c8 pg-col pg-col-r"><Steps rows={steps} /></div>
         </div>
       </Sec>
 
       <Sec id="randomness" labelledBy="rd-h">
         <div className="pg-split">
-          <div className="c5 pg-col">
-            <SecHead n={4} id="rd-h">{t("sec.randTitle")}</SecHead>
+          <div className="c4 pg-col">
+            <SecHead n={4} id="rd-h">{dot(t("sec.randTitle"))}</SecHead>
             <p className="body">{t("sec.randIntro")}</p>
             <div className="pg-facts">
               <div className="pg-fact"><span className="num-m">{lat.value.medianS}<span className="unit">s</span></span><span className="label">{t("arrives.median")}</span></div>
@@ -138,7 +149,7 @@ export default async function SecurityPage() {
             </div>
             <p className="fine">{t("about.refundP", { slots: formatInt(timeout.value, locale), min: timeoutMin })}</p>
           </div>
-          <div className="c7 pg-col pg-col-r">
+          <div className="c8 pg-col pg-col-r">
             <CodeBlock code={formula} />
             <TableWrap>
               <table className="pg-table pg-wrap-cells pg-stack">
@@ -154,7 +165,7 @@ export default async function SecurityPage() {
       <Sec id="invariants" labelledBy="iv-h">
         <div className="pg-split">
           <div className="c4 pg-col">
-            <SecHead n={5} id="iv-h">{t("sec.invTitle")}</SecHead>
+            <SecHead n={5} id="iv-h">{dot(t("sec.invTitle"))}</SecHead>
             <p className="body">{t("sec.invIntro")}</p>
           </div>
           <div className="c8 pg-col pg-col-r"><Notes items={invariants} /></div>
@@ -163,11 +174,11 @@ export default async function SecurityPage() {
 
       <Sec id="fees" labelledBy="fe-h">
         <div className="pg-split">
-          <div className="c5 pg-col">
-            <SecHead n={6} id="fe-h">{t("trust.feesTitle")}</SecHead>
+          <div className="c4 pg-col">
+            <SecHead n={6} id="fe-h">{dot(t("trust.feesTitle"))}</SecHead>
             <p className="body">{t("about.feesP", { bps: formatInt(fee.value, locale), pct: pct(formatPct(fee.value / 10000, 2)), host: formatInt(host.value, locale) })}</p>
           </div>
-          <div className="c7 pg-col pg-col-r">
+          <div className="c8 pg-col pg-col-r">
             <div className="plate pg-facts">
               <div className="pg-fact"><span className="num-l">{(fee.value / 100).toFixed(2)}<span className="unit">%</span></span><span className="label">{P.sec.entry}</span></div>
               <div className="pg-fact"><span className="num-l">0</span><span className="label">{P.sec.sell}</span></div>
@@ -179,11 +190,11 @@ export default async function SecurityPage() {
 
       <Sec id="authority" labelledBy="au-h">
         <div className="pg-split">
-          <div className="c5 pg-col">
-            <SecHead n={7} id="au-h">{t("about.authority")}</SecHead>
+          <div className="c4 pg-col">
+            <SecHead n={7} id="au-h">{dot(t("about.authority"))}</SecHead>
             <p className="body">{t("sec.authIntro")}</p>
           </div>
-          <div className="c7 pg-col pg-col-r">
+          <div className="c8 pg-col pg-col-r">
             <Notes items={[
               <><b>{t("about.optA")}</b> {t("sec.optAWhy")}</>,
               <><b>{t("about.optB")}</b> {t("sec.optBWhy")}</>,
@@ -196,7 +207,7 @@ export default async function SecurityPage() {
       <Sec id="checks" labelledBy="ck-h">
         <div className="pg-split">
           <div className="c4 pg-col">
-            <SecHead n={8} id="ck-h">{t("checks.title")}</SecHead>
+            <SecHead n={8} id="ck-h">{dot(t("checks.title"))}</SecHead>
             <p className="body">{t("checks.sub")}</p>
           </div>
           <div className="c8 pg-col pg-col-r">
@@ -220,7 +231,7 @@ export default async function SecurityPage() {
       <Sec id="risks" labelledBy="rk-h">
         <div className="pg-split">
           <div className="c4 pg-col">
-            <SecHead n={9} id="rk-h">{t("risks.title")}</SecHead>
+            <SecHead n={9} id="rk-h">{dot(t("risks.title"))}</SecHead>
             <p className="body">{t("risks.sub", { date: reviewed })}</p>
           </div>
           <div className="c8 pg-col pg-col-r"><Notes items={risks} /></div>
@@ -230,7 +241,7 @@ export default async function SecurityPage() {
       <Sec id="architecture" labelledBy="ar-h">
         <div className="pg-split">
           <div className="c4 pg-col">
-            <SecHead n={10} id="ar-h">{t("arch.title")}</SecHead>
+            <SecHead n={10} id="ar-h">{dot(t("arch.title"))}</SecHead>
           </div>
           <div className="c8 pg-col pg-col-r">
             <div className="plate pg-rows in-plate">{arch.map((a) => <div key={a.t}><h3 className="pg-h3">{a.t}</h3><p className="body">{a.b}</p></div>)}</div>
@@ -241,7 +252,7 @@ export default async function SecurityPage() {
       <Sec id="limits" labelledBy="lm-h">
         <div className="pg-split">
           <div className="c4 pg-col">
-            <SecHead n={11} id="lm-h">{t("sec.limTitle")}</SecHead>
+            <SecHead n={11} id="lm-h">{dot(t("sec.limTitle"))}</SecHead>
             <p className="body">{t("sec.limIntro")}</p>
           </div>
           <div className="c8 pg-col pg-col-r"><Notes items={limits} /></div>

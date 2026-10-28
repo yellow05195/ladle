@@ -6,7 +6,8 @@
  * handle tag top right while in demo. Left: "15 players." / "One price." in
  * Figtree 900 (no italic), the viewer's line, the smallest and the largest at
  * one size, the sum line. Right: the arrival-order list with player dots,
- * every row the same size and colour. Bottom: the deepest band with the
+ * every row the same size and colour (past 13 players, the first 12 and a
+ * "+N more, in arrival order" row). Bottom: the deepest band with the
  * mark, the conserved sentence and useladle.fun. The same layout for every result.
  */
 import { BRAND } from "../../../config/brand";
@@ -91,9 +92,11 @@ export async function drawScoopCard(c: HTMLCanvasElement, d: CardData): Promise<
   for (const wd of words) { const tr = line ? `${line} ${wd}` : wd; if (g.measureText(tr).width > 520) { g.fillText(line, 64, y); y += 30; line = wd; } else line = tr; }
   if (line) g.fillText(line, 64, y);
   // right half: the arrival order, one size, one colour, a player dot each
-  const rows = d.tiles.slice(0, 13);
+  // v21 fix: a round of more than 13 lists the first 12 in arrival order and says how many follow (never a silent cut)
+  const more = d.tiles.length > 13 ? d.tiles.length - 12 : 0;
+  const rows = more ? d.tiles.slice(0, 12) : d.tiles;
   const x0 = 660, x1 = W - 64, rh = 30;
-  const ry0 = Math.max(160, 300 - (rows.length * rh) / 2);
+  const ry0 = Math.max(160, 300 - ((rows.length + (more ? 1 : 0)) * rh) / 2);
   g.font = `500 20px ${F}`;
   rows.forEach((tl, i) => {
     const yy = ry0 + i * rh;
@@ -107,7 +110,7 @@ export async function drawScoopCard(c: HTMLCanvasElement, d: CardData): Promise<
     g.fillText(formatMultiplier(tl.m), x1, yy);
     g.textAlign = "left";
   });
-  if (d.tiles.length > 13) { g.fillStyle = INK3; g.font = `500 18px ${F}`; g.fillText(`+${d.tiles.length - 13}`, x0 + 22, ry0 + 13 * rh + 2); }
+  if (more) { g.fillStyle = INK3; g.font = `500 20px ${F}`; g.textAlign = "left"; g.fillText(`+${more} more, in arrival order`, x0 + 22, ry0 + rows.length * rh); }
   // bottom: the deepest band with the mark, the conserved sentence and the domain
   const by = H - 96;
   g.fillStyle = GROUND0; g.fillRect(0, by, W, 96);
@@ -119,5 +122,8 @@ export async function drawScoopCard(c: HTMLCanvasElement, d: CardData): Promise<
   g.fillStyle = INK; g.font = `650 24px ${F}`;
   g.fillText(fit(g, d.foot, 760), 64 + 34 + 16, by + 57);
   g.fillStyle = INK3; g.font = `500 16px ${F}`; g.textAlign = "right";
-  g.fillText(`${BRAND.domain} · seed ${d.seed8}…`, W - 64, by + 56); g.textAlign = "left";
+  g.fillText(d.seed8 ? `${BRAND.domain} · seed ${d.seed8}…` : BRAND.domain, W - 64, by + 56); g.textAlign = "left";
 }
+
+// dev captures (screenshots/v21/fix-tour3d-r2/shoot-card.mjs): draw a card from test data
+if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") (window as unknown as { __drawScoopCard?: unknown }).__drawScoopCard = drawScoopCard;

@@ -355,8 +355,11 @@ export function HallScene({ quality, onEnv, onShell, compact = false }: { qualit
       }),
       loadGLTF(M("polypizza/spotlight-a-ipoly3d.glb")).then((g) => {
         const m = g.scene.clone(true);
-        // the can is unlit (the key light sits inside it): a dark body, a warm lens
-        m.traverse((o) => { const mesh = o as THREE.Mesh; if (!mesh.isMesh) return; const name = (mesh.material as THREE.Material).name; mesh.material = new THREE.MeshBasicMaterial({ color: name === "Glow" ? "#8a6a3c" : "#151110" }); });
+        // the key light sits inside the can, so nothing lights its body from below: v21 fix (r2) a dark brass that the room's
+        // fill and reflections still model, with a faint warm floor of its own, so it never renders as a black hole in a
+        // tour frame (at least #2A1E16); a warm lens
+        const can = new THREE.MeshStandardMaterial({ color: "#5A4128", metalness: 0.55, roughness: 0.42, emissive: new THREE.Color("#2E2016"), emissiveIntensity: 1 });
+        m.traverse((o) => { const mesh = o as THREE.Mesh; if (!mesh.isMesh) return; const name = (mesh.material as THREE.Material).name; mesh.material = name === "Glow" ? new THREE.MeshBasicMaterial({ color: "#8a6a3c" }) : can; });
         const w = normalise(m, 0.7);
         w.position.set(0, 7.5 - 0.7, 0.3);
         w.rotation.x = Math.PI;

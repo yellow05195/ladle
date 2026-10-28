@@ -94,9 +94,12 @@ function useHistoryRead<T>(get: (src: HistorySource) => Promise<T>, live: boolea
     if (!idle || !live || !src?.subscribeCurve) return;
     let alive = true, t = 0;
     const load = () => getRef.current(src).then((x) => { if (alive) setV(x); }).catch(() => {});
-    load();
+    // the first refresh as the chapter comes near waits for an idle moment, off the scroll frame (verify r2:
+    // reading the history and re-rendering the chart there cost one 55-90 ms frame on the first scroll)
+    const ric = (window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void });
+    const first = ric.requestIdleCallback ? ric.requestIdleCallback(() => { if (alive) void load(); }, { timeout: 1200 }) : window.setTimeout(() => { if (alive) void load(); }, 300);
     const off = src.subscribeCurve(() => { if (!t) t = window.setTimeout(() => { t = 0; load(); }, ms); });
-    return () => { alive = false; off(); if (t) clearTimeout(t); };
+    return () => { alive = false; off(); if (t) clearTimeout(t); if (ric.cancelIdleCallback) ric.cancelIdleCallback(first); else clearTimeout(first); };
   }, [idle, live, src, ms]);
   return v;
 }
@@ -181,6 +184,39 @@ export function TourScrim() {
     const onResize = () => { clearTimeout(rt); rt = window.setTimeout(build, 200); };
     window.addEventListener("resize", onResize);
     return () => { io?.disconnect(); fio.disconnect(); window.removeEventListener("resize", onResize); clearTimeout(rt); delete root.dataset.tourFoot; };
+  }, []);
+  // leaving under the top bar (tour.css): browsers without scroll-driven animations fade each row out with an IntersectionObserver
+  useEffect(() => {
+    if (typeof CSS !== "undefined" && CSS.supports?.("animation-timeline: view()")) return;
+    const root = document.documentElement;
+    const tour = document.querySelector(".tour");
+    if (!tour) return;
+    root.dataset.goneJs = "";
+    const SEL = ".tour-cap > :not(.t-beats, .t-faces, .t-ledger, .pg-qa, .pg-gloss), .tour-cap .t-beats > li, .tour-cap .t-faces > li, .tour-cap .t-ledger > div, .tour-cap .pg-qa > details, .tour-cap .pg-gloss > div";
+    let io: IntersectionObserver | null = null, t = 0;
+    const build = () => {
+      io?.disconnect();
+      const topH = parseFloat(getComputedStyle(root).getPropertyValue("--top-h")) || 72;
+      const line = window.innerHeight < 780 ? 2 : 38; // the middle of tour.css's fade, under the bar
+      io = new IntersectionObserver((es) => {
+        for (const e of es) {
+          const el = e.target as HTMLElement;
+          // gone once its top has risen past the middle of the fade; back when it comes down again
+          if (e.boundingClientRect.top < (e.rootBounds?.top ?? 0) && e.intersectionRatio < 1) el.dataset.gone = ""; else delete el.dataset.gone;
+        }
+      }, { rootMargin: `-${Math.round(topH + line)}px 0px 0px 0px`, threshold: [0, 1] });
+      tour.querySelectorAll(SEL).forEach((el) => io!.observe(el));
+    };
+    build();
+    // rows arrive later (the ledger, the faces): observe them as they do
+    const mo = new MutationObserver((ms) => {
+      if (!ms.some((m) => [...m.addedNodes].some((n) => n instanceof Element && (n.matches(SEL) || !!n.querySelector(SEL))))) return;
+      clearTimeout(t); t = window.setTimeout(build, 120);
+    });
+    mo.observe(tour, { childList: true, subtree: true });
+    const onResize = () => { clearTimeout(t); t = window.setTimeout(build, 200); };
+    window.addEventListener("resize", onResize);
+    return () => { io?.disconnect(); mo.disconnect(); clearTimeout(t); window.removeEventListener("resize", onResize); delete root.dataset.goneJs; };
   }, []);
   return <div ref={ref} className="tour-scrim" aria-hidden="true"><i className="l" /><i className="r" /></div>;
 }
@@ -308,7 +344,7 @@ export function CurveChapter() {
   );
 }
 
-/** Open books: the bear host keeps them; three ledger rows on a plate and the identity. */
+/** Open books: the bear host keeps them; three ledger rows straight on the scrim, and the identity. */
 export function BooksChapter() {
   const near = useNear("books");
   const b = useHistoryRead<Books>(getBooks, near, 1500);
@@ -379,7 +415,7 @@ export function GenesisChapter() {
     <Chapter id="genesis" side="left" label={T.gen.label}>
       <Head2 id="genesis-h" l1={T.gen.l1} l2={T.gen.l2} />
       <p className="lede">{P.gen.note}</p>
-      {g ? <div className="t-facts"><Fact v={<>{formatInt(g.claimed)}<span className="unit">/ {formatInt(g.cap)}</span></>} l={P.gen.claimed} /></div> : null}
+      {g ? <div className="t-facts"><Fact v={<>{formatInt(g.claimed)}<span className="unit">{"\u202F/\u00A0"}{formatInt(g.cap)}</span></>} l={P.gen.claimed} /></div> : null}
       {faces.length ? (
         <ol className="t-faces" aria-label={P.gen.aria}>
           {faces.map((f, i) => (
@@ -400,13 +436,13 @@ export function GenesisChapter() {
   );
 }
 
-/** Questions: the whole room, dimmed, behind the question plates. */
-export function QuestionsChapter({ items }: { items: Array<{ q: string; a: string }> }) {
+/** Questions: the whole room, dimmed, behind five question rows (no plates); every other question is on /about. */
+export function QuestionsChapter({ items }: { items: ReadonlyArray<{ q: string; a: string }> }) {
   return (
-    <Chapter id="questions" side="left" label={T.qa.label} wide>
+    <Chapter id="questions" side="left" label={T.qa.label}>
       <Head2 id="questions-h" l1={P.qa.l1} l2={P.qa.l2} />
       <Faq items={items} />
-      <More href="/security">{P.qa.more}</More>
+      <More href="/about#questions">{P.qa.more}</More>
     </Chapter>
   );
 }

@@ -28,6 +28,7 @@ export function TourDriver() {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     const veil = document.querySelector<HTMLElement>(".hall-stage .hall-veil");
     let anchors: number[] = [0];
+    let holds: number[] = [0];
     let raf = 0, dipT = 0, lastAt = -1, lastVeil = -1, dipping = false, first = true;
     const last = TOUR.length - 1;
 
@@ -41,7 +42,7 @@ export function TourDriver() {
     const update = () => {
       raf = 0;
       const y = window.scrollY;
-      const t = tourAt(y, anchors);
+      const t = tourAt(y, anchors, undefined, holds);
       tourBus.target = t;
       const at = Math.round(t);
       if (at !== lastAt) {
@@ -67,7 +68,7 @@ export function TourDriver() {
         if (!dipping) setVeil(dim(tourBus.cut));
       } else setVeil(dim(t));
     };
-    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    const onScroll = () => { tourBus.scrollAt = performance.now(); if (!raf) raf = requestAnimationFrame(update); };
 
     const measure = () => {
       const vh = window.innerHeight;
@@ -78,10 +79,10 @@ export function TourDriver() {
       const railH = document.querySelector<HTMLElement>(".conserved")?.offsetHeight ?? 48;
       const band = vh - topH - railH;
       const max = Math.max(0, root.scrollHeight - vh);
-      const a = [0];
+      const a = [0], hd = [0];
       for (const id of STOPS) {
         const el = document.querySelector<HTMLElement>(`[data-tour-stop="${id}"]`);
-        if (!el) { a.push(Math.min(max, a[a.length - 1]! + 1)); continue; }
+        if (!el) { a.push(Math.min(max, a[a.length - 1]! + 1)); hd.push(0); continue; }
         const r = el.getBoundingClientRect();
         const top = r.top + window.scrollY;
         // the stop is reached when the caption sits where it is read: centred in the band beside the subject (desktop; a caption
@@ -89,9 +90,14 @@ export function TourDriver() {
         let y = port ? top - vh * 0.5 : r.height <= band - 48 ? top + r.height / 2 - (topH + band / 2) : top - (topH + 24);
         y = Math.min(max, Math.max(a[a.length - 1]! + 1, y));
         a.push(y);
+        // r2: portrait: the camera keeps the subject until the caption's last line clears the rail (its top starts at half
+        // the height; what does not fit above the rail is read by scrolling, with the camera holding); desktop: no extra hold
+        hd.push(port ? Math.max(0, r.height - (vh * 0.5 - railH) + 24) : 0);
       }
       anchors = a;
+      holds = hd;
       tourBus.anchors = a;
+      tourBus.holds = hd;
       update();
     };
 
@@ -102,7 +108,25 @@ export function TourDriver() {
     if (main) ro.observe(main);
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", onScroll, { passive: true });
+    // r2: Home and End jump the whole tour: say where they go, so the camera flies straight there (one flight, not a chase
+    // of the browser's smooth scroll); any other way of scrolling forgets it
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (e.key === "Home") { tourBus.dest = 0; tourBus.destAt = performance.now(); }
+      else if (e.key === "End") { tourBus.dest = last; tourBus.destAt = performance.now(); }
+      else tourBus.dest = null;
+    };
+    const forget = () => { tourBus.dest = null; };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("wheel", forget, { passive: true });
+    window.addEventListener("touchstart", forget, { passive: true });
     return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("wheel", forget);
+      window.removeEventListener("touchstart", forget);
+      tourBus.dest = null;
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", measure);
       ro.disconnect();
@@ -120,6 +144,8 @@ export function TourDriver() {
     const y = tourBus.anchors[i];
     if (y == null) return;
     e.preventDefault();
+    // r2: the camera flies straight to the stop while the page scrolls there
+    tourBus.dest = i; tourBus.destAt = performance.now();
     window.scrollTo({ top: y, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   };
 

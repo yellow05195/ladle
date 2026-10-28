@@ -16,8 +16,10 @@ export const DEMO_HOST_FEE_BPS = 0n;
 export const DEMO_CAP_FLOOR = LAMPORTS_PER_SOL / 2n; // 0.5 SOL
 export const DEMO_DEFAULT_ENTRY = LAMPORTS_PER_SOL / 4n; // 0.25 SOL
 export const DEMO_MINT = "DEMOmintxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-/** The demo caps the sampled oracle delay so a viewer never waits more than this. */
-export const DEMO_DELAY_CAP_MS = 30_000;
+/** The demo caps the sampled oracle delay so a viewer never waits more than this (v21 fix: 12 s, was 30 s). */
+export const DEMO_DELAY_CAP_MS = 12_000;
+/** v21 fix: a visit's first live rounds never draw the oracle's slow tail (they stay within 1.5x the median). */
+export const DEMO_CALM_ROUNDS = 8;
 /** The first live round of a visit; rounds 1 … FIRST_WINDOW-1 are the replayed history. */
 export const FIRST_WINDOW = 1100;
 export const WINDOW_MS = DEMO_SLOTS * DEMO_SLOT_MS;
@@ -78,20 +80,21 @@ function lognormalLamports(p: Prng): bigint {
 }
 
 /**
- * Dev only (v21): `?crowd=N` (1 … 160) sets how many players enter every
- * live demo round, to test the hall with 10, 50 or 120 players together.
- * The replayed history (rounds before FIRST_WINDOW) is never changed. Read
- * once, from the URL the page was opened with.
+ * v21: `?crowd=N` (1 … 120) sets how many players enter every live demo
+ * round, to show the hall with 10, 50 or 120 players together. The demo
+ * source only (this file plans the demo's rounds; the chain source never
+ * reads it), in development and in production builds alike. The replayed
+ * history (rounds before FIRST_WINDOW) is never changed. Read once, from the
+ * URL the page was opened with.
  */
 let crowdOverride: number | null | undefined;
 export function demoCrowd(): number | null {
   if (crowdOverride !== undefined) return crowdOverride;
   if (typeof window === "undefined") return null;
   crowdOverride = null;
-  if (process.env.NODE_ENV === "production") return null;
   try {
     const v = Number(new URLSearchParams(window.location.search).get("crowd"));
-    if (Number.isFinite(v) && v >= 1) crowdOverride = Math.min(160, Math.floor(v));
+    if (Number.isFinite(v) && v >= 1) crowdOverride = Math.min(120, Math.floor(v));
   } catch { /* no URL */ }
   return crowdOverride;
 }
@@ -115,6 +118,7 @@ export function plan(n: number): Plan {
     total += amount;
     entries.push({ owner, label: pseudonym(owner), amount, frac: fracs[i]! });
   }
-  const delayMs = sampleOracleDelayMs(p.next());
+  const u = p.next();
+  const delayMs = sampleOracleDelayMs(n >= FIRST_WINDOW && n < FIRST_WINDOW + DEMO_CALM_ROUNDS ? Math.min(u, 0.899) : u);
   return { n, seed, vrfAccount, settleTx, entries, delayMs };
 }

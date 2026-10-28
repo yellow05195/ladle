@@ -115,7 +115,7 @@ const fail = (reason: FailReason, extra: Parameters<typeof hintFor>[1] = {}): Se
 export async function sendText(text: string): Promise<SendResult> {
   const c = classify(text);
   if (c.kind === "empty") return fail("empty");
-  if (c.kind === "command") return c.known ? { ok: true, kind: "command" } : fail("unknown-command");
+  if (c.kind === "command") return c.known ? { ok: true, kind: "command" } : fail("unknown-command", { cmd: c.text });
   const n = charCount(c.text);
   if (n > MAX_TEXT) return fail("too-long", { chars: n });
   if (looksLikeLink(c.text)) return fail("blocked");

@@ -8,7 +8,8 @@ export type ShotName = "emblem" | "home" | "seat" | "room" | "reveal";
 export interface ShotDef { pos: [number, number, number]; look: [number, number, number]; fov: number; fovPhone: number; posPhone?: [number, number, number]; lookPhone?: [number, number, number] }
 
 export const SHOTS: Record<ShotName, ShotDef> = {
-  emblem: { pos: [0, 5.15, 4.2], look: [0, 5.15, 0], fov: 30, fovPhone: 38 },
+  // v21.2: the loader's close shot on the drum, from the front right, a ball in the chute (screenshots/v21/loader/frame.mjs)
+  emblem: { pos: [2.25, 3.6, 5.46], look: [-0.06, 2.36, -0.16], fov: 30, fovPhone: 52, posPhone: [1.64, 3.61, 5.46], lookPhone: [-0.06, 2.3, -0.16] },
   // v21 fix: the home from the front right (the drum and the felt crowd right of the playbill, the left of the frame on the
   // room's dark side; searched on a 50-player room, screenshots/v21/fix-tour3d/home-search.mjs); phones from the front left,
   // closer and lower, so the drum and the crowd fill the band above the playbill (the cage about 40 % of the width)

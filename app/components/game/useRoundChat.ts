@@ -16,13 +16,17 @@ export const solStr = (l: bigint) => formatSol(l, 3).replace(/\.?0+$/, "");
 interface Tracker { entries: number; said: Set<string> }
 
 /**
- * The round chat as a hook: every entry of the live round becomes a chat
- * message (`name: !scoop 0.25`), the phases are short room notices (open,
- * sealed, seed in) and the serve is one house line (players, one price, the
- * smallest and the largest scoop, a Recompute link); the commands typed by
- * the viewer get an answer with real figures (the demo source and the law).
- * The demo marker is the tag and the chat's header, never a chat line.
- * Nothing here decides a result: it only reads the snapshots.
+ * The round chat as a hook. Fix r2, so the chat reads as people talking and
+ * not as a log: each round is ONE room notice that keeps its place and is
+ * updated in place ("Round No. 1111 · 12 in", then "· sealed at slot 92");
+ * other players' entries are counted there, not written one by one; the
+ * open and seed-in notices are gone (the instruments show them). The
+ * viewer's own entry is their line and a cream note; the serve is one house
+ * line (players, one price, the smallest and the largest scoop, a Recompute
+ * link); the commands typed by the viewer get an answer with real figures
+ * (the demo source and the law). The demo marker is the tag and the chat's
+ * header, never a chat line. Nothing here decides a result: it only reads
+ * the snapshots.
  */
 export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = true, myName, onSeat, serving = false }: { w: LiveWindow | null; source: DataSource; enter: (amount: bigint) => void; sellBack: () => void; facts: GameFacts; t: T; seated?: boolean; myName?: string; onSeat?: () => void; serving?: boolean }) {
   // a spectator's own command lines go unsigned (never "you", which reads as a player called you)
@@ -41,6 +45,8 @@ export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = tr
     const withIds = items.map((m) => ({ ...m, id: nextId.current++ }) as Msg);
     setMsgs((cur) => [...cur, ...withIds].slice(-MAX_MSGS));
   }, []);
+  /** each round's one notice: its message id and its current text */
+  const roundNote = useRef(new Map<string, { id: number; text: string }>());
 
   // the snapshots → chat lines
   useEffect(() => {
@@ -48,12 +54,25 @@ export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = tr
     const out: Array<MsgIn> = [];
     const n = roundNo(w.id);
     const sys = (text: string, title = t("chat.system"), link?: { href: string; hrefLabel: string }, personal?: boolean) => out.push({ kind: "sys", title, text, ...link, ...(personal ? { personal } : {}) });
-    const notice = (text: string) => out.push({ kind: "notice", text });
     let tr = tracker.current.get(w.id);
     if (!tr) {
       tr = { entries: 0, said: new Set() };
       tracker.current.set(w.id, tr);
-      if (w.phase === "open") notice(t("chat.nOpen", { n }));
+    }
+    // the round's one notice: written at its first entry, then its text changes in place (count, then sealed)
+    const k = w.entries.length;
+    if (k > 0) {
+      const text = w.phase === "open" ? t(k === 1 ? "chat.nRoundOne" : "chat.nRound", { n, k }) : t(k === 1 ? "chat.nRoundSealedOne" : "chat.nRoundSealed", { n, k, slots: w.slotsTotal });
+      const note = roundNote.current.get(w.id);
+      if (!note) {
+        const id = nextId.current++;
+        roundNote.current.set(w.id, { id, text });
+        setMsgs((cur) => [...cur, { id, kind: "notice", text, round: w.id } as Msg].slice(-MAX_MSGS));
+        if (roundNote.current.size > 40) { const first = roundNote.current.keys().next().value; if (first !== undefined) roundNote.current.delete(first); }
+      } else if (note.text !== text) {
+        note.text = text;
+        setMsgs((cur) => cur.map((m) => (m.id === note.id && m.kind === "notice" ? { ...m, text } : m)));
+      }
     }
     for (let i = tr.entries; i < w.entries.length; i++) {
       const e = w.entries[i]!;
@@ -68,16 +87,13 @@ export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = tr
           out.push({ kind: "drop", name: me, mine: true, sol: solStr(e.amount), cmd: `!scoop ${solStr(e.amount)}` });
           out.push({ kind: "reply", title: t("chat.bot"), personal: true, text: t("chat.rEntered", { n, sol: solStr(e.amount) }) });
         }
-      } else {
-        out.push({ kind: "drop", name: e.label, mine: false, sol: solStr(e.amount), cmd: `!scoop ${solStr(e.amount)}` });
       }
+      // other players' entries are counted in the round's notice (one line per round, not one per entry)
     }
     tr.entries = w.entries.length;
 
-    const once = (k: string, fn: () => void) => { if (!tr!.said.has(k)) { tr!.said.add(k); fn(); } };
+    const once = (key: string, fn: () => void) => { if (!tr!.said.has(key)) { tr!.said.add(key); fn(); } };
     const ph = w.phase;
-    if (ph !== "open") once("sealed", () => notice(t("chat.nSealed", { n, slots: w.slotsTotal })));
-    if ((ph === "seeded" || ph === "settled" || ph === "sold") && w.seedHex) once("seed", () => notice(t("chat.nSeed", { n })));
     if ((ph === "settled" || ph === "sold") && w.settlement && w.entries.length) once("split", () => {
       const s = w.settlement!;
       let lo = Infinity, hi = -Infinity;

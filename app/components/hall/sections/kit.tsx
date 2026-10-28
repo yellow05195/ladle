@@ -58,17 +58,18 @@ export function PageHead({ label, title, lede, children }: { label: ReactNode; t
 }
 
 /**
- * A sequence on an inner page (the law's clauses, the round's four
- * instructions): one plate per step, a 44 px well disc with its numeral, a
- * title, one sentence and an optional timing note. The tour's beats are
- * their own, smaller kind (Chapters.tsx).
+ * A true sequence on an inner page (the law's clauses, the round's four
+ * instructions): one plate per step, a 44 px disc with its numeral, a title,
+ * one sentence and an optional timing note. The disc is cream where the
+ * sequence opens its page with no section disc above it (/odds), a well
+ * otherwise. The tour's beats are their own, smaller kind (Chapters.tsx).
  */
-export function Steps({ rows, className = "" }: { rows: ReadonlyArray<{ t: ReactNode; b?: ReactNode; note?: ReactNode }>; className?: string }) {
+export function Steps({ rows, className = "", cream = false }: { rows: ReadonlyArray<{ t: ReactNode; b?: ReactNode; note?: ReactNode }>; className?: string; cream?: boolean }) {
   return (
-    <ol className={`pg-steps ${className}`}>
+    <ol className={`pg-steps ${cream ? "cream" : ""} ${className}`}>
       {rows.map((r, i) => (
         <li key={i}>
-          <span className="disc" aria-hidden="true">{i + 1}</span>
+          <span className={`disc ${cream ? "cream" : ""}`} aria-hidden="true">{i + 1}</span>
           <div className="tx">
             <h3 className="pg-h3">{r.t}</h3>
             {r.b ? <p className="body">{r.b}</p> : null}
@@ -80,12 +81,17 @@ export function Steps({ rows, className = "" }: { rows: ReadonlyArray<{ t: React
   );
 }
 
-/** Numbered sentences on one plate (what nobody can do, the invariants, the risks, the limits, the house rules). */
+/**
+ * Sentences in no particular order on one plate (what nobody can do, the
+ * invariants, the update authority, the risks, the limits, the house
+ * rules): zebra rows, no numerals. Numerals belong to section heads and to
+ * true sequences (Steps) only.
+ */
 export function Notes({ items }: { items: ReadonlyArray<ReactNode> }) {
   return (
-    <ol className="pg-notes">
-      {items.map((s, i) => <li key={i}><span className="disc" aria-hidden="true">{i + 1}</span><span className="tx">{s}</span></li>)}
-    </ol>
+    <ul className="pg-notes">
+      {items.map((s, i) => <li key={i}>{s}</li>)}
+    </ul>
   );
 }
 

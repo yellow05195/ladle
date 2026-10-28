@@ -6,7 +6,8 @@
  * modal canvas is open; below the fold it drops to 15 fps, past two
  * viewport heights it stops (one last frame), except on the home's scroll
  * tour (v21), where the hall is the page and keeps its full rate. The low
- * tier (a software renderer, e.g. SwiftShader) always runs at 15 fps.
+ * tier (a software renderer, e.g. SwiftShader) always runs at 15 fps. The
+ * shader programs are compiled before the first scroll (Warmup, v21 r2).
  */
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useRef } from "react";
@@ -18,6 +19,8 @@ import { HallScene } from "./HallScene";
 import { Ladle } from "./Ladle";
 import { Staff } from "./Staff";
 import { hall, useHall, type Quality } from "./store";
+import * as THREE from "three";
+import { TOUR, tourMode, tourPose, type TourPose } from "./tour";
 
 function FrameDriver({ quality }: { quality: Quality }) {
   const { setFrameloop, invalidate, gl } = useThree();
@@ -48,6 +51,118 @@ function FrameDriver({ quality }: { quality: Quality }) {
     (window as unknown as { __hallGL?: string }).__hallGL = ctx instanceof WebGL2RenderingContext ? "webgl2" : "webgl";
     hall.set({ glReady: true });
   }, [gl]);
+  return null;
+}
+
+/**
+ * v21 fix (r2): the GPU programs and textures are prepared before anyone scrolls. The scroll tour brings
+ * new objects into view (the stands, the bear's gallery, the door, the back of the room); each one's
+ * first frame used to compile its shader program and upload its textures on the spot (frames of 100 to
+ * 270 ms, the camera stepping half a metre). Once the room is lit, in idle time, every material in the
+ * scene (visible or not, in or out of the frustum: compile() walks the graph with the room's lights) is
+ * compiled, with KHR_parallel_shader_compile where the GPU has it (compileAsync), and every texture is
+ * uploaded. Then, every 2 s for the first 30 s, only the parts of the scene that gained a material since
+ * (the crowd's species, the watchers, the staff) are compiled again: a whole-scene pass costs tens of
+ * milliseconds of CPU even when every program exists, which must never land in the middle of a scroll.
+ * Once compiled, the room is drawn once from every stop and halfway along every leg, into one pixel (the
+ * driver's own per-object state). Outside development the shader error check (a synchronous info-log
+ * read per program) is off.
+ */
+function Warmup() {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+  const lit = useHall((s) => s.lit);
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") gl.debug.checkShaderErrors = false;
+  }, [gl]);
+  useEffect(() => {
+    if (!lit) return;
+    let alive = true, runs = 0, idleId = 0;
+    const timers: number[] = [];
+    const seenTex = new WeakSet<THREE.Texture>();
+    const seenMat = new WeakSet<THREE.Material>();
+    const w = window as unknown as { requestIdleCallback?: (f: (d?: { timeRemaining: () => number }) => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    const run = () => {
+      idleId = 0;
+      if (!alive) return;
+      const t0 = performance.now();
+      const n0 = gl.info.programs?.length ?? 0;
+      // the scene's top-level parts that hold a material not compiled yet (the first pass: all of them)
+      const parts: THREE.Object3D[] = [];
+      for (const part of scene.children) {
+        let fresh = false;
+        part.traverse((o) => {
+          const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+          if (!m) return;
+          for (const mat of Array.isArray(m) ? m : [m]) {
+            if (!seenMat.has(mat)) { seenMat.add(mat); fresh = true; }
+            for (const v of Object.values(mat)) {
+              if (v instanceof THREE.Texture && !seenTex.has(v) && v.image) { seenTex.add(v); gl.initTexture(v); }
+            }
+          }
+        });
+        if (fresh) parts.push(part);
+      }
+      if (parts.length) {
+        void Promise.all(parts.map((part) => gl.compileAsync(part, camera, scene))).then(() => {
+          if (process.env.NODE_ENV !== "production") {
+            const d = window as unknown as { __warm?: Array<[number, number, number, number]> };
+            // [when (performance.now()), parts compiled, how long until every program was ready (ms), programs added]
+            d.__warm = [...(d.__warm ?? []), [Math.round(t0), parts.length, Math.round(performance.now() - t0), (gl.info.programs?.length ?? 0) - n0]];
+          }
+          if (!primed) { primed = true; prime(0); }
+        }).catch(() => {});
+      }
+    };
+    // then the GPU's side: one draw of the room from every stop of the tour and halfway along every leg, into a single pixel
+    // of the canvas (the next frame repaints it), one pose per idle slot, so the driver builds each object's draw state
+    // before the reader scrolls to it rather than in the middle of the scroll
+    let primed = false;
+    const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 60);
+    const pose: TourPose = { px: 0, py: 0, pz: 0, lx: 0, ly: 0, lz: 0, fov: 40, vs: 0, lift: 0 };
+    const prime = (i0: number) => {
+      if (!alive || i0 * 0.5 > TOUR.length - 1) {
+        if (process.env.NODE_ENV !== "production") (window as unknown as { __primed?: number }).__primed = Math.round(performance.now());
+        return;
+      }
+      const go = (deadline?: { timeRemaining: () => number }) => {
+        idleId = 0;
+        if (!alive) return;
+        let i = i0;
+        // as many poses as this idle slot has room for (at least one)
+        do {
+          const t = i * 0.5;
+          if (t > TOUR.length - 1) break;
+          const el = gl.domElement;
+          const mode = tourMode(el.clientWidth || 1280, el.clientHeight || 800);
+          tourPose(t, mode, { fov: 40, vs: 0 }, pose);
+          cam.aspect = (el.clientWidth || 1280) / (el.clientHeight || 800);
+          cam.fov = pose.fov * 1.25;
+          cam.updateProjectionMatrix();
+          cam.position.set(pose.px, pose.py, pose.pz);
+          cam.lookAt(pose.lx, pose.ly, pose.lz);
+          const was = gl.getScissorTest();
+          gl.setScissorTest(true);
+          gl.setScissor(0, 0, 1, 1);
+          gl.render(scene, cam);
+          gl.setScissorTest(was);
+          i++;
+        } while (deadline && deadline.timeRemaining() > 12);
+        prime(i);
+      };
+      if (w.requestIdleCallback) idleId = w.requestIdleCallback(go as () => void, { timeout: 600 });
+      else window.setTimeout(go, 50);
+    };
+    const later = (ms: number) => timers.push(window.setTimeout(() => {
+      if (!alive) return;
+      if (w.requestIdleCallback) idleId = w.requestIdleCallback(run, { timeout: 1000 });
+      else run();
+      if (++runs < 15) later(2000);
+    }, ms));
+    later(250);
+    return () => { alive = false; timers.forEach(clearTimeout); if (idleId) w.cancelIdleCallback?.(idleId); };
+  }, [lit, gl, scene, camera]);
   return null;
 }
 
@@ -145,9 +260,10 @@ export default function HallWorld({ quality, phone, compact = false }: { quality
       tabIndex={-1}
     >
       <FrameDriver quality={quality} />
+      {quality === "none" ? null : <Warmup />}
       {process.env.NODE_ENV !== "production" ? <PerfProbe /> : null}
       {quality === "high" ? <AdaptiveDpr max={1.5} /> : null}
-      <CameraRig phone={phone} />
+      <CameraRig phone={phone} compact={compact} />
       <HallScene quality={quality} compact={compact} />
       <DrumAssembly quality={quality} />
       <Ladle onReady={onLadle} />

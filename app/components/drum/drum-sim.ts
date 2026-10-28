@@ -84,6 +84,9 @@ const FRESH_MS = 1800;
 const CHUTE_FALL_MS = 260;
 
 export const OMEGA_IDLE = Math.PI * 2 * 0.25;
+/** v21 fix: the sealed cage's slow idle turn while the seed is awaited (rad/s), and when it starts after the seal (ms) */
+export const OMEGA_SEALED_IDLE = Math.PI * 2 * 0.05;
+export const SEALED_IDLE_AFTER_MS = 3000;
 export const OMEGA_FAST = Math.PI * 2 * 0.8;
 export const BRAKE_MS = 900;
 export const SPIN_MS = 1150;
@@ -317,7 +320,11 @@ export class DrumSim {
       // sealed: a spring brake, 900 ms, with one small overshoot
       const t = Math.min(1, (now - this.lockAt) / BRAKE_MS);
       const om = t >= 1 ? 0 : this.brakeFrom * Math.exp(-t * 4.2) * Math.cos(t * Math.PI * 1.12);
-      this.angle += om * dt + this.dragOmega * dt;
+      // v21 fix: a seed that is slow to come never leaves the room frozen: after 3 s sealed the cage idles round
+      // (0.05 rev/s, eased in over 1.5 s; the wires' grip only), until the decisive turn takes over from where it is
+      const u = this.omegaOpen > 0 && this.lockAt ? Math.min(1, Math.max(0, (now - this.lockAt - SEALED_IDLE_AFTER_MS) / 1500)) : 0;
+      const idle = OMEGA_SEALED_IDLE * u * u * (3 - 2 * u);
+      this.angle += om * dt + this.dragOmega * dt + idle * dt;
       this.dragOmega *= Math.exp(-dt * 16);
     }
     if (this.phase === "open") this.dragOmega *= Math.exp(-dt * 6);

@@ -39,7 +39,9 @@ export function Dock({ w, state, amount, setAmount, max, busy, reason, setReason
 }) {
   const t = useT();
   const hostFee = w.hostFeeBps > 0n && host ? t("h.dock.hostFee", { pct: pctBps(w.hostFeeBps), host }) : t("h.dock.hostNone");
-  const fine = phone ? t("h.dock.finePhone", { host: hostFee }) : t("h.dock.fine", { host: hostFee });
+  const short = t("h.dock.finePhone", { host: hostFee });
+  // desktop: the long fee line, and the short one for the narrowed dock beside the result sheet (CSS picks)
+  const fine = phone ? short : <><span className="fl">{t("h.dock.fine", { host: hostFee })}</span><span className="fs">{short}</span></>;
   const mine = w.mineIndex !== null ? w.entries[w.mineIndex] : undefined;
   const over = amount > max;
   const Cls = phone ? "pdock" : "dock hud-pane hud-in";

@@ -14,7 +14,7 @@
  *   ladle-lockup.svg / ladle-lockup-dark.svg    the word over the tagline
  *   ladle-avatar-400.png / -1000.png            X / Discord / Telegram picture, circle-safe
  *   ladle-avatar-tomato-1000.png / -brass-1000  alternative pictures
- *   ladle-app-icon-1024.png                     the tomato tile
+ *   ladle-app-icon-1024.png                     the app tile: cream ladle, saffron ball, on charcoal (as app/apple-icon.png)
  *   ladle-banner-1500x500.png                   X header
  *   ladle-geometry.json                         the logo's paths, for the loader and the 3D ladle
  * And app/icon.png (64), app/apple-icon.png (180), public/favicon.ico (16, 32, 48), public/favicon.svg.
@@ -48,12 +48,12 @@ for (const [suffix, ink, ball] of [["", C.cream, C.saffron], ["-dark", C.charcoa
   await png(svgDoc(W, H, body, C.charcoal), out("ladle-wordmark-2400.png"), W);
 }
 
-/* 3. the lockup: the word over the tagline, set in Fraunces Black, left-aligned on the word's stem */
+/* 3. the lockup: the word over the tagline, set in Figtree 900 (v21.1: the site's one family), left-aligned on the word's stem */
 for (const [file, ink, ball, sub] of [["ladle-lockup.svg", C.cream, C.saffron, C.cream2], ["ladle-lockup-dark.svg", C.charcoal, C.tomato, "#4D4239"]]) {
   const xh = 56, wa = wordAt({ x: 0, y: 0, xh, ink, ball });
   const pad = 8, base = pad + wa.ascent, size = 30, lead = 36;
-  const t1 = textPath(TAG1, { x: pad - 1, baseline: base + 54, size, face: "serif", fill: ink, tracking: -0.01 });
-  const t2 = textPath(TAG2, { x: pad - 1, baseline: base + 54 + lead, size, face: "serif", fill: sub, tracking: -0.01 });
+  const t1 = textPath(TAG1, { x: pad - 1, baseline: base + 54, size, face: "display", fill: ink, tracking: -0.01 });
+  const t2 = textPath(TAG2, { x: pad - 1, baseline: base + 54 + lead, size, face: "display", fill: sub, tracking: -0.01 });
   const W = Math.ceil(Math.max(wa.width, t1.width, t2.width) + 2 * pad), H = Math.ceil(base + 54 + lead + 10 + pad);
   const body = wordAt({ x: pad, y: base, xh, ink, ball }).svg + t1.svg + t2.svg;
   writeFileSync(out(file), svgDoc(W, H, body).replace("<svg ", `<svg role="img" aria-label="Ladle. ${TAG1} ${TAG2}" `) + "\n");
@@ -63,7 +63,8 @@ for (const [file, ink, ball, sub] of [["ladle-lockup.svg", C.cream, C.saffron, C
 for (const size of [400, 1000]) await png(symbolSquare({ side: size, frac: 0.56, ...WAYS.primary }), out(`ladle-avatar-${size}.png`), size);
 await png(symbolSquare({ side: 1000, frac: 0.56, ink: C.charcoal, ball: C.cream, bg: C.tomato }), out("ladle-avatar-tomato-1000.png"), 1000);
 await png(symbolSquare({ side: 1000, frac: 0.56, ...WAYS.hall }), out("ladle-avatar-brass-1000.png"), 1000);
-await png(symbolSquare({ side: 1024, frac: 0.56, ink: C.charcoal, ball: C.charcoal, bg: C.tomato }), out("ladle-app-icon-1024.png"), 1024);
+// the app tile is the shipped apple icon at 1024 (v21.1: one tile, the Primary colourway)
+await png(symbolSquare({ side: 1024, frac: 0.6, ...WAYS.primary }), out("ladle-app-icon-1024.png"), 1024);
 
 /* 5. X header 1500 x 500: the hall on the left (the profile picture sits over that side), fading into
    charcoal; the word and the tagline on the right */
@@ -72,11 +73,11 @@ await png(symbolSquare({ side: 1024, frac: 0.56, ink: C.charcoal, ball: C.charco
   const hall = await hallPhoto(860, H);
   const fade = svgDoc(W, H, `<defs><linearGradient id="f" x1="0" x2="1"><stop offset="0.36" stop-color="${C.charcoal}" stop-opacity="0"/><stop offset="0.58" stop-color="${C.charcoal}" stop-opacity="1"/></linearGradient><linearGradient id="v" x1="0" y1="0" x2="0" y2="1"><stop offset="0.55" stop-color="${C.charcoal}" stop-opacity="0"/><stop offset="1" stop-color="${C.charcoal}" stop-opacity="0.85"/></linearGradient></defs><rect width="${W}" height="${H}" fill="url(#v)"/><rect width="${W}" height="${H}" fill="url(#f)"/>`);
   const xh = 92, probe = wordAt({ xh, ink: "", ball: "" });
-  const t1 = textPath(TAG1, { size: 40, face: "serif", tracking: -0.01 }), t2 = textPath(TAG2, { size: 40, face: "serif", tracking: -0.01 });
+  const t1 = textPath(TAG1, { size: 40, face: "display", tracking: -0.01 }), t2 = textPath(TAG2, { size: 40, face: "display", tracking: -0.01 });
   const right = W - 110, wx = right - probe.width, base = 232;
   const text = wordAt({ x: wx, y: base, xh, ...WAYS.primary }).svg
-    + textPath(TAG1, { x: right - t1.width, baseline: base + 78, size: 40, face: "serif", fill: C.cream, tracking: -0.01 }).svg
-    + textPath(TAG2, { x: right - t2.width, baseline: base + 126, size: 40, face: "serif", fill: C.cream2, tracking: -0.01 }).svg;
+    + textPath(TAG1, { x: right - t1.width, baseline: base + 78, size: 40, face: "display", fill: C.cream, tracking: -0.01 }).svg
+    + textPath(TAG2, { x: right - t2.width, baseline: base + 126, size: 40, face: "display", fill: C.cream2, tracking: -0.01 }).svg;
   await sharp({ create: { width: W, height: H, channels: 3, background: C.charcoal } })
     .composite([{ input: hall, left: 0, top: 0 }, { input: Buffer.from(fade), left: 0, top: 0 }, { input: Buffer.from(svgDoc(W, H, text)), left: 0, top: 0 }])
     .png({ compressionLevel: 9 }).toFile(out("ladle-banner-1500x500.png"));

@@ -11,13 +11,17 @@
  * v21 r1. Rounds are pipelined: while the focused round seals, draws and
  * serves, its sibling is already open. The instruments and the dock follow
  * the open round (the focused one gets one line under the facts), so an
- * entry is open whenever some round is. The result rises as a column over
- * the instrument column (the dock stays), holds for the same time for every
- * result, then folds: entrants keep one line with Open, spectators keep
- * nothing (the chat has the house line).
+ * entry is open whenever some round is.
+ *
+ * Results (fix r2): the sheet rises by itself only for a round the viewer
+ * played; it holds for the same time for every result, then folds to a stub
+ * with Open, and that stub (the viewer's last own result) is kept apart, so
+ * later rounds never take it away. A round the viewer only watched is a
+ * stub with Open for the hold (the chat has the house line), so a seated
+ * player never loses the countdown to someone else's result.
  */
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BRAND } from "../../../../config/brand";
 import { useT } from "../../../i18n/client";
 import type { LiveWindow } from "../../../lib/data/types";
@@ -53,7 +57,8 @@ function framing(embed: boolean, sheetUp: boolean): { viewShift: number; viewLif
   const g = parseFloat(cs.getPropertyValue("--gutter")) || 40;
   const chat = W >= 1024 ? g + (parseFloat(cs.getPropertyValue("--chat-w")) || 320) : 0;
   const iw = parseFloat(cs.getPropertyValue("--instr-w")) || 300;
-  const instr = sheetUp && W >= 1024 ? g + (W >= 1280 ? 476 : 430) : g + iw;
+  // the sheet's column measured from the right edge (24 px + its 440 px + 12 px of air); the gutter is already in it
+  const instr = sheetUp && W >= 1024 ? (W >= 1280 ? 476 : 430) : g + iw;
   // 768-1023: the chat is a bottom-left drawer, so the drum stays centred rather than shifting toward it
   return { viewShift: W >= 1024 ? (chat - instr) / (2 * W) : 0, viewLift: W >= 1024 ? 28 : 0 };
 }
@@ -85,7 +90,12 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
   const [amount, setAmount] = useState<bigint>(AMOUNTS[1]!);
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState<string | null>(null);
+  /** the round the sheet shows (any round, opened or risen) */
   const [result, setResult] = useState<LiveWindow | null>(null);
+  /** the viewer's last own result: its stub stays until their next entry is served (a watched round never replaces it) */
+  const [myResult, setMyResult] = useState<LiveWindow | null>(null);
+  /** a round the viewer only watched, as a stub with Open for the hold */
+  const [spect, setSpect] = useState<LiveWindow | null>(null);
   const [sheet, setSheet] = useState(false);
   /** the sheet rose by itself (it folds after the hold); a sheet the viewer reopened stays until closed */
   const [auto, setAuto] = useState(false);
@@ -101,7 +111,7 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
         // v21.1 §7.12: when the result sheet is about to rise, the camera's return to the room already frames the
         // drum clear of the sheet's column, so the sheet never lands over the drum while the camera glides
         const cur = wRef.current;
-        const rises = !!cur && !!reveal && reveal.id === cur.id && closedFor.current !== cur.id && window.innerWidth >= 1024 && !embed;
+        const rises = !!cur && !!reveal && reveal.id === cur.id && cur.mineIndex !== null && closedFor.current !== cur.id && window.innerWidth >= 1024 && !embed;
         hall.set(rises ? { shot: "room", ...framing(embed, true) } : { shot: "room" });
       }
       return;
@@ -183,39 +193,41 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
   sendRef.current = send;
   const sendRound = useCallback((text: string) => sendRef.current(text), []);
 
-  // the result: once every ball has landed, the sheet rises (400 ms after the tags change, the same for every result)
+  // the result: once every ball has landed (400 ms after the tags change, the same for every result), the sheet
+  // rises for a round the viewer played; a round they only watched becomes a stub with Open for the hold
   const rising = useRef("");
   const resultRef = useRef(result);
   resultRef.current = result;
-  const sheetRef = useRef(sheet);
-  sheetRef.current = sheet;
-  const compactRef = useRef(compact);
-  compactRef.current = compact;
   useEffect(() => {
     if (!w || !settled || !revealed) return;
-    if (result?.id === w.id) { if (result !== w) setResult(w); return; }
+    // a later snapshot of a round already shown (a sell back): every view of it follows
+    if (result?.id === w.id || myResult?.id === w.id || spect?.id === w.id) {
+      if (result?.id === w.id && result !== w) setResult(w);
+      if (myResult?.id === w.id && myResult !== w) setMyResult(w);
+      if (spect?.id === w.id && spect !== w) setSpect(w);
+      return;
+    }
     if (closedFor.current === w.id || rising.current === w.id) return;
     rising.current = w.id;
     const snap = w;
     window.setTimeout(() => {
       const cur = wRef.current;
       const r = cur && cur.id === snap.id ? cur : snap;
-      setResult(r);
       rising.current = "";
-      if (compactRef.current && r.mineIndex === null) {
-        // phones: a round the viewer did not play is one line with Open for the same hold (the chat has the house line), never a full-screen sheet
-        closedFor.current = r.id;
-        setSheet(false);
-        setAuto(false);
-        window.setTimeout(() => { if (!sheetRef.current) setResult((x) => (x && x.id === r.id && x.mineIndex === null ? null : x)); }, HOLD_MS);
+      closedFor.current = r.id;
+      if (r.mineIndex === null) {
+        setSpect(r);
+        window.setTimeout(() => setSpect((x) => (x && x.id === r.id ? null : x)), HOLD_MS);
         return;
       }
+      setMyResult(r);
+      setResult(r);
       setSheet(true);
       setAuto(true);
     }, reduced ? 0 : 400);
-  }, [w, settled, revealed, result, reduced]);
+  }, [w, settled, revealed, result, myResult, spect, reduced]);
 
-  // folding: the sheet goes; an entrant keeps a line with Open; the hall follows the live rounds again
+  // folding: the sheet goes (the viewer's own result keeps its stub); the hall follows the live rounds again
   // stable across snapshots (the live context changes on every one), so the hold below is not restarted by them
   const liveRef = useRef(live);
   liveRef.current = live;
@@ -225,7 +237,7 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
     const r = resultRef.current;
     if (!r) return;
     closedFor.current = r.id;
-    if (r.mineIndex === null) setResult(null);
+    setResult(null);
     const cur = wRef.current;
     if (cur && cur.id === r.id) liveRef.current.release();
   }, []);
@@ -246,65 +258,76 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
   }, [sheet, auto, result?.id, fold]);
   // the viewer entered the next round: the sheet folds at once
   useEffect(() => {
-    if (sheet && result && w && w.id !== result.id && w.mineIndex !== null) { setSheet(false); setAuto(false); closedFor.current = result.id; if (result.mineIndex === null) setResult(null); }
+    if (sheet && result && w && w.id !== result.id && w.mineIndex !== null) { setSheet(false); setAuto(false); closedFor.current = result.id; setResult(null); }
   }, [w, sheet, result]);
-  const reopen = useCallback(() => { setSheet(true); setAuto(false); }, []);
+  const openSheet = useCallback((x: LiveWindow) => { setResult(x); setSheet(true); setAuto(false); setSpect((s) => (s && s.id === x.id ? null : s)); }, []);
 
   if (!mounted || !w) return null;
   const myScarf = profile ? scarfHex(profile.scarf) : undefined;
-  const mine = w.mineIndex !== null && (w.phase === "open" || w.phase === "sealed" || w.phase === "seeded") ? w.entries[w.mineIndex] : undefined;
-  const stub = mine ? <TicketStub n={roundNum(w.id)} entry={mine} hostBps={w.hostFeeBps} phone={compact} /> : null;
+  // the viewer's entry in the focused round, from the entry until its result is out
+  const mine = w.mineIndex !== null && (w.phase === "open" || w.phase === "sealed" || w.phase === "seeded" || myServe) ? w.entries[w.mineIndex] : undefined;
   const r = roundView(w);
+  // rounds are pipelined: the dial may already count the next round while the viewer's own one draws
+  const followsOther = r.id !== w.id;
+  const stubTop = !!mine && followsOther;
+  const stub = mine ? <TicketStub n={roundNum(w.id)} entry={mine} hostBps={w.hostFeeBps} phone={compact} state={w.phase === "open" ? undefined : stateWord(t, w.phase)} /> : null;
   const canEnter = !!entryRound(w, { serving: myServe });
   const ds = myServe ? "none" : dockState(w, seated, canEnter);
   const showSheet = sheet && !!result;
   const max = live.maxEntry();
-  const dock = myServe ? (
+  // phones: while the cream strip shows, it is the one line about the viewer's entry (no dock line repeating it)
+  const dock = compact && stub ? null : myServe ? (
     <section className={compact ? "pdock" : "dock hud-pane hud-in"}><p className="line soft" role="status"><span className="me-dot" aria-hidden="true" /><span>{t("h.dock.serving", { n: roundNum(w.id) })}</span></p></section>
   ) : (
     <Dock w={w} state={ds} amount={amount} setAmount={setAmount} max={max} busy={busy} reason={reason} setReason={setReason} onScoop={() => void enterNow(amount)} onSeat={takeSeat} host={host} phone={compact} />
   );
 
-  // the focused round, when the instruments follow its open sibling; else the viewer's last result, folded
-  const followsOther = r.id !== w.id;
-  let note: ReactNode = null;
-  /** the result, folded: a plate stub in the instruments' column (desktop), one line with Open on phones */
-  let folded: ReactNode = null;
-  if (followsOther && w.phase === "sealed") note = t("h.room.waitSeed", { n: roundNum(w.id) });
-  else if (followsOther && (w.phase === "seeded" || (settled && !revealed))) note = t("h.room.serving", { n: roundNum(w.id) });
-  else if (!showSheet && result && result.mineIndex !== null && result.settlement?.myMultiplier != null) {
-    const st = result.settlement;
-    const text = st.myShare !== null ? t("h.rs.stubMine", { n: roundNum(result.id), m: mult(st.myMultiplier!), tokens: ladle(st.myShare) }) : t("h.rs.lineMine", { n: roundNum(result.id), m: mult(st.myMultiplier!) });
-    const open = <button type="button" className="key sec s" onClick={reopen}>{t("h.rs.open")}</button>;
-    if (compact) note = <><span>{text}</span>{open}</>;
-    else folded = <div className="rs-stub" aria-live="polite"><span>{text}</span>{open}</div>;
-  } else if (!showSheet && result && result.mineIndex === null && compact) {
-    note = (
-      <>
-        <span>{t("h.rs.stubSpect", { n: roundNum(result.id), players: result.entries.length })}</span>
-        <button type="button" className="key sec s" onClick={reopen}>{t("h.rs.open")}</button>
-      </>
-    );
+  // the focused round when the dial follows its open sibling (one line; the receipt says it when the round is the viewer's)
+  let note: string | null = null;
+  if (followsOther && !mine && w.phase === "sealed") note = t("h.room.waitSeed", { n: roundNum(w.id) });
+  else if (followsOther && !mine && (w.phase === "seeded" || (settled && !revealed))) note = t("h.room.serving", { n: roundNum(w.id) });
+  // the folded results: the viewer's last own result (kept apart), else a watched round's stub for the hold
+  let foldText: string | null = null;
+  let foldOpen: LiveWindow | null = null;
+  if (!showSheet && !stub) {
+    const st = myResult?.settlement;
+    if (myResult && st && st.myMultiplier !== null) {
+      foldText = st.myShare !== null ? t("h.rs.stubMine", { n: roundNum(myResult.id), m: mult(st.myMultiplier), tokens: ladle(st.myShare) }) : t("h.rs.lineMine", { n: roundNum(myResult.id), m: mult(st.myMultiplier) });
+      foldOpen = myResult;
+    } else if (spect) {
+      foldText = t(spect.entries.length === 1 ? "h.rs.stubSpectOne" : "h.rs.stubSpect", { n: roundNum(spect.id), players: spect.entries.length });
+      foldOpen = spect;
+    }
   }
   const openLine = r.phase === "open" ? t("h.room.openLine", { n: r.n, phase: phaseWord(t, r.phase, r.total), left: slotsLeft(t, r.left) }) : `${t("h.room.roundNo", { n: r.n })} · ${phaseWord(t, r.phase, r.total)}`;
   const results = showSheet ? <ResultSheet w={result!} myScarf={myScarf} live={result!.id === w.id} head={openLine} onClose={fold} /> : null;
 
   if (compact) {
+    // one 36 px row under the stem: the viewer's own result first, then what the hall is drawing, then a watched round
+    const row = foldOpen && foldOpen === myResult
+      ? { text: foldText!, open: foldOpen }
+      : note ? { text: note, open: null }
+      : foldOpen ? { text: foldText!, open: foldOpen } : null;
     return (
       <>
         {embed ? <EmbedHead /> : <TopBar room />}
         <div className="pplay">
           <div className="strip">
             <div className="l"><b>{t("h.room.roundNo", { n: r.n })}</b><StateTag word={stateWord(t, r.phase)} /></div>
-            <div className="c"><RollingFigure text={String(r.left)} className="num-dial" mode="fade" /><span className="label">{t(r.left === 1 ? "h.dial.shortOne" : "h.dial.short")}</span></div>
+            <div className="c"><RollingFigure text={String(r.left)} className="num-dial" mode="swap" /><span className="label">{t(r.left === 1 ? "h.dial.shortOne" : "h.dial.short")}</span></div>
             <div className="r"><span className="num-m"><RollingFigure text={sol2(r.pot)} /><span className="unit">SOL</span></span><span className="label">{t(r.players === 1 ? "h.room.phonePotOne" : "h.room.phonePot", { players: r.players })}</span></div>
           </div>
           <div className="stem-wrap"><Stem elapsed={r.elapsed} total={r.total} thin /></div>
-          {note ? <p className="pnote" aria-live="polite">{note}</p> : null}
+          {row ? (
+            <div className="pnote" aria-live="polite">
+              <span className="t">{row.text}</span>
+              {row.open ? <button type="button" className="key sec xs" onClick={() => openSheet(row.open!)}>{t("h.rs.open")}</button> : null}
+            </div>
+          ) : null}
           <div ref={band} className="hall-band" aria-hidden="true" />
           <div className="plow">
             {!embed ? <RoomChat msgs={msgs} sendRound={sendRound} myName={profile?.nickname ?? ""} myScarf={myScarf} variant="phone" /> : null}
-            {stub ? <div className="pdock" style={{ paddingBottom: 0 }}>{stub}</div> : null}
+            {stub ? <div className="pdock pstub">{stub}</div> : null}
             {dock}
           </div>
         </div>
@@ -312,12 +335,15 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
       </>
     );
   }
+  const folded = foldText && foldOpen ? (
+    <div className="rs-stub" aria-live="polite"><span>{foldText}</span><button type="button" className="key sec s" onClick={() => openSheet(foldOpen!)}>{t("h.rs.open")}</button></div>
+  ) : null;
   return (
     <>
       {embed ? <EmbedHead /> : <TopBar room />}
       <div className="hud-root">
         {!embed ? <RoomChat msgs={msgs} sendRound={sendRound} myName={profile?.nickname ?? ""} myScarf={myScarf} /> : null}
-        <Instruments w={w} transient={null} note={note} stub={stub} folded={folded} />
+        <Instruments w={w} transient={null} note={note} stub={stub} stubTop={stubTop} folded={folded} />
         {dock}
         {results}
       </div>

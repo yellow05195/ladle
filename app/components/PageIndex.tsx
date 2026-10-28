@@ -3,8 +3,9 @@
 /**
  * The side index of a long inner page (v21.1, §7.17, as on the home tour):
  * one 8 px dot per section at the right edge, the current one a 10 px cream
- * disc, its name on a small plate on hover or focus. Desktop only (1100 px
- * and up); hidden above the first section and once the footer is in view.
+ * disc, its name on a small plate on hover or focus. Only where the page has
+ * a real margin beside its column (1360 px and up, site.css); hidden above
+ * the first section and once the footer is in view.
  * The current section is read by an IntersectionObserver, never on scroll.
  */
 import { useEffect, useRef } from "react";

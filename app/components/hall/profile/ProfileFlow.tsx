@@ -69,9 +69,10 @@ function StepLine({ at }: { at: 1 | 2 | 3 }) {
   );
 }
 
-/** A portrait that keeps its previous image until the next one is decoded (no empty squares on a scarf change). */
-function Portrait({ src, size }: { src: string; size: number }) {
+/** A portrait that keeps its previous image until the next one is decoded (no empty squares on a scarf change); before its first picture, the species' initial holds the tile. */
+function Portrait({ src, size, initial }: { src: string; size: number; initial: string }) {
   const [shown, setShown] = useState(src);
+  const [ok, setOk] = useState(false);
   useEffect(() => {
     if (src === shown) return;
     let alive = true;
@@ -80,8 +81,30 @@ function Portrait({ src, size }: { src: string; size: number }) {
     img.decode().then(() => { if (alive) setShown(src); }).catch(() => { if (alive) setShown(src); });
     return () => { alive = false; };
   }, [src, shown]);
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={shown} alt="" width={size} height={size} decoding="async" />;
+  return (
+    <>
+      {ok ? null : <span className="ini" aria-hidden="true">{initial}</span>}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={shown} alt="" width={size} height={size} decoding="async" onLoad={() => setOk(true)} />
+    </>
+  );
+}
+
+/** The sheet's scroll area says when more of it is below (its foot then fades into the plate; otherwise nothing is faded, so nothing reads as clipped). */
+function useMoreBelow() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const put = () => el.classList.toggle("more", el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+    put();
+    const ro = new ResizeObserver(put);
+    ro.observe(el);
+    for (const c of el.children) ro.observe(c);
+    el.addEventListener("scroll", put, { passive: true });
+    return () => { ro.disconnect(); el.removeEventListener("scroll", put); };
+  }, []);
+  return ref;
 }
 
 function WalletStep() {
@@ -105,11 +128,17 @@ function WalletStep() {
     });
   }, [wallet, connected, connecting, connect, t]);
   const pick = (name: WalletName) => { setErr(null); asked.current = name; select(name); };
+  const scroll = useMoreBelow();
+  /** every row keeps a 28 px mark slot: the wallet's own icon, else its initial on a disc, so the names line up */
+  const mark = (icon: string | undefined, name: string) => (icon
+    // eslint-disable-next-line @next/next/no-img-element
+    ? <img src={icon} alt="" width={28} height={28} />
+    : <span className="mk ini" aria-hidden="true">{name.slice(0, 1)}</span>);
 
   return (
     <>
       <button type="button" className="icon-btn round x" aria-label={t("h.close")} onClick={close}><HIcon name="close" /></button>
-      <div className="scroll">
+      <div ref={scroll} className="scroll">
         <StepLine at={1} />
         <h2 id="checkin-title" className="display-m" tabIndex={-1}>{t("h.wal.title")}</h2>
         {pubkey ? (
@@ -121,42 +150,44 @@ function WalletStep() {
         <div className="wal-rows">
           {installed.map((w) => (
             <button key={w.adapter.name} type="button" className="wal-row" onClick={() => pick(w.adapter.name)} disabled={connecting}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              {w.adapter.icon ? <img src={w.adapter.icon} alt="" width={28} height={28} /> : null}
+              {mark(w.adapter.icon, w.adapter.name)}
               <span className="nm">{w.adapter.name}</span>
               <span className="label">{connecting && wallet?.adapter.name === w.adapter.name ? t("h.wal.connecting") : t("h.wal.installed")}</span>
             </button>
           ))}
           {others.map((w) => (
             <a key={w.adapter.name} className="wal-row" href={w.adapter.url} target="_blank" rel="noreferrer">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              {w.adapter.icon ? <img src={w.adapter.icon} alt="" width={28} height={28} /> : null}
+              {mark(w.adapter.icon, w.adapter.name)}
               <span className="nm">{w.adapter.name}</span>
               <span className="label go">{t("h.wal.getIt")}<Arr ch="↗" /></span>
             </a>
           ))}
           {installed.length === 0 ? known.map((n) => (
             <a key={n} className="wal-row" href={GET[n]} target="_blank" rel="noreferrer">
+              {mark(undefined, n)}
               <span className="nm">{n}</span>
               <span className="label go">{t("h.wal.getIt")}<Arr ch="↗" /></span>
             </a>
           )) : null}
           {DATA_SOURCE === "demo" ? (
             <button type="button" className="wal-row" onClick={() => { setErr(null); connectDemo(); }}>
-              <span className="mk" aria-hidden="true"><Mark size={20} /></span>
+              <span className="mk" aria-hidden="true"><Mark size={17} /></span>
               <span className="nm">{t("h.wal.demoName")}</span>
               <span className="label">{t("h.wal.demoNote")}</span>
             </button>
           ) : null}
         </div>
         <p className="body" style={{ fontSize: 15 }}>{t("h.wal.body")}</p>
-        {installed.length === 0 ? <p className="fine">{t("h.wal.howGet")}</p> : null}
+        {/* one footnote; how to install a wallet sits behind each row's "get it" */}
         <p className="fine">{t("h.wal.foot")}</p>
+        {err ? <p className="reason bad" aria-live="polite">{err}</p> : <span className="sr-only" aria-live="polite" />}
       </div>
-      <div className="bottom">
-        <button type="button" className="key cream wide" aria-disabled={!pubkey || undefined} onClick={() => { if (pubkey) openProfile(); }}>{t("h.wal.continue")}</button>
-        <p className={`reason ${err ? "bad" : ""}`} aria-live="polite">{err ?? (!pubkey ? t("h.wal.pick") : "")}</p>
-      </div>
+      {/* picking a row advances; the key shows only when a connected wallet waits to be confirmed */}
+      {pubkey ? (
+        <div className="bottom">
+          <button type="button" className="key cream wide" onClick={openProfile}>{t("h.wal.continue")}</button>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -212,10 +243,11 @@ function CharacterStep() {
     grid.current[j]?.focus();
   };
 
+  const scroll = useMoreBelow();
   return (
     <>
       <button type="button" className="icon-btn round x" aria-label={t("h.close")} onClick={close}><HIcon name="close" /></button>
-      <div className="scroll">
+      <div ref={scroll} className="scroll">
         {editing ? <p className="label" style={{ paddingRight: 48 }}>{t("h.prof.editFolio")}</p> : <StepLine at={2} />}
         <h2 id="checkin-title" className="display-m" tabIndex={-1}>{t("h.prof.title")}</h2>
         <div className="pick">
@@ -232,7 +264,7 @@ function CharacterStep() {
             {SPECIES.map((s, i) => (
               <button key={s} ref={(el) => { grid.current[i] = el; }} type="button" role="radio" aria-checked={s === species} aria-label={s} tabIndex={s === species ? 0 : -1}
                 onClick={() => { setSpecies(s); setCheer((c) => c + 1); }} onKeyDown={(e) => onGridKey(e, i)} onMouseEnter={() => setHover(s)} onMouseLeave={() => setHover(null)}>
-                <Portrait src={thumbUrl(s, scarf)} size={60} />
+                <Portrait src={thumbUrl(s, scarf)} size={60} initial={s.slice(0, 1)} />
               </button>
             ))}
           </div>

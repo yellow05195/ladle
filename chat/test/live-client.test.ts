@@ -102,7 +102,7 @@ test("a spectator and a signed player share one room: talk, crowd, seat, departu
   const burst = [await A.say("two"), await A.say("three"), await A.say("four")];
   assert.deepEqual(burst.map((x) => x.ok), [true, true, false]);
   assert.equal(burst[2]!.reason, "rate-limited");
-  assert.match(burst[2]!.hint!, /One line every 1\.5 s, next in [12] s\./);
+  assert.match(burst[2]!.hint!, /Slow down a little: next line in [12] s\./);
 
   // leaving: B sees marlo go
   A.stop();

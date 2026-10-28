@@ -19,11 +19,23 @@ const TEX_W = 8192, TEX_H = 64;
 const R = 3.61, H = 0.3, Y = 0.12 + 0.18;
 const SPEED = 0.35; // m/s along the rim
 
+/**
+ * The price before and after a move. v21 fix: a move too small to show at 4 decimals is printed with 6 (or 8),
+ * so a sell never reads as "0.0725 → 0.0725" under a caption that says each sell steps the price down.
+ */
+export function pricePair(before: number, after: number): string {
+  for (const d of [4, 6, 8]) {
+    const a = before.toFixed(d), b = after.toFixed(d);
+    if (a !== b || d === 8) return `${a} → ${b}`;
+  }
+  return `${before} → ${after}`;
+}
+
 export function tickerLine(p: CurvePoint): string {
   const tok = formatInt(p.tokens / 1_000_000n);
   return p.kind === "buy"
-    ? `R#${p.round} bought ${tok} LADLE · ${p.before.toFixed(4)} → ${p.after.toFixed(4)} SOL / 1M`
-    : `sell ${tok} LADLE · ${p.before.toFixed(4)} → ${p.after.toFixed(4)} SOL / 1M`;
+    ? `R#${p.round} bought ${tok} LADLE · ${pricePair(p.before, p.after)} SOL / 1M`
+    : `sell ${tok} LADLE · ${pricePair(p.before, p.after)} SOL / 1M`;
 }
 
 export function FloorTicker() {

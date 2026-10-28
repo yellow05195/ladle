@@ -31,6 +31,9 @@ html[data-tour][data-scrolled="1"] .tb:not(.inner)::before { opacity: 1; }
 .tour, .tour-scrim { --cap-w: min(470px, 39vw); --cap-wide: min(620px, 50vw); --index-w: 28px; }
 .tour { position: relative; z-index: 11; overflow-x: clip; }
 .tour-ch { position: relative; min-height: 140vh; display: flex; align-items: center; }
+/* verify r2: the curve -> books leg is the longest flight (about 14 m); a taller pair of sections gives the camera the
+   scroll it needs at a reading pace (landscape only; the portrait holds are measured per caption) */
+@media (min-width: 1024px) and (min-aspect-ratio: 1000/999) { .tour-ch:has(#curve), .tour-ch:has(#books) { min-height: 170vh; } }
 /* the captions sit on the chrome's lines: left ones on the gutter (the wordmark, the playbill, the footer), right ones a side index short of the nav's edge */
 .tour-in { width: 100%; padding: 16vh var(--gutter); display: flex; justify-content: flex-start; }
 .tour-ch[data-side="right"] .tour-in { justify-content: flex-end; padding-right: calc(var(--gutter) + var(--index-w)); }
@@ -39,8 +42,10 @@ html[data-tour][data-scrolled="1"] .tb:not(.inner)::before { opacity: 1; }
 .tour-cap.wide { width: var(--cap-wide); }
 .tour-cap > * { max-width: 100%; min-width: 0; }
 .tour-cap > :is(.t-beats, .t-facts, .t-ledger, .t-curve, .pg-gloss, .pg-qa, .t-faces, .pg-swarm, .pg-swarm-facts) { width: 100%; justify-self: stretch; }
-/* plates, wells, discs and keys need no halo */
-.tour-cap :is(.t-ledger, .pg-qa, .tok, .disc, .key, .face) { text-shadow: none; }
+/* rows that hang outside the caption by their own margin */
+.tour-cap > :is(.t-ledger, .pg-qa) { width: auto; max-width: none; }
+/* wells, discs, keys and the open question's band need no halo */
+.tour-cap :is(.t-ledger > div:hover, .pg-qa details[open], .tok, .disc, .key, .face) { text-shadow: none; }
 
 /* the rhythm (mockup f3): label 12, headline 14, lede 26, block 28, link */
 .tour-cap > .label { color: var(--ink-2); }
@@ -56,6 +61,38 @@ html[data-tour][data-scrolled="1"] .tb:not(.inner)::before { opacity: 1; }
 .tour-cap > .t-curve + .t-facts { margin-top: 18px; }
 .tour-cap > .t-facts + .t-faces, .tour-cap > .t-ledger + .t-identity { margin-top: 18px; }
 .tour-cap .fine { color: var(--ink-3); }
+
+/*
+ * Leaving under the top bar: the bar has no surface on the tour (only its
+ * soft fade), so each line of a caption fades out on its own as it rises
+ * toward it, and is gone when its top is 20 px under the bar (where the
+ * bar's own fade is still deep). The fade is scroll-driven (no script, on
+ * the compositor): it starts when the row's top is 56 px under the bar and
+ * ends 36 px later. A caption read at its stop is never touched: on short
+ * screens (under 780 px) a tall caption stops 24 px under the bar
+ * (TourDriver), so there the fade runs from 20 px under the bar to 16 px
+ * inside it, still clear of the wordmark and the nav. Tall blocks fade
+ * row by row (beats, faces, ledger rows, questions, commands), never as one
+ * piece. Browsers without scroll-driven animations get the same through an
+ * IntersectionObserver (TourScrim sets data-gone).
+ */
+.tour-cap > :not(.t-beats, .t-faces, .t-ledger, .pg-qa, .pg-gloss),
+.tour-cap .t-beats > li, .tour-cap .t-faces > li, .tour-cap .t-ledger > div, .tour-cap .pg-qa > details, .tour-cap .pg-gloss > div { --gone-at: calc(var(--top-h) + 56px); }
+@supports (animation-timeline: view()) {
+  .tour-cap > :not(.t-beats, .t-faces, .t-ledger, .pg-qa, .pg-gloss),
+  .tour-cap .t-beats > li, .tour-cap .t-faces > li, .tour-cap .t-ledger > div, .tour-cap .pg-qa > details, .tour-cap .pg-gloss > div {
+    animation: tour-out linear both;
+    animation-timeline: view(block var(--gone-at) 0px);
+    animation-range: exit 0% exit 36px;
+  }
+}
+@keyframes tour-out { from { opacity: 1; } to { opacity: 0; } }
+@media (max-height: 779px) {
+  .tour-cap > :not(.t-beats, .t-faces, .t-ledger, .pg-qa, .pg-gloss),
+  .tour-cap .t-beats > li, .tour-cap .t-faces > li, .tour-cap .t-ledger > div, .tour-cap .pg-qa > details, .tour-cap .pg-gloss > div { --gone-at: calc(var(--top-h) + 20px); }
+}
+html[data-gone-js] :is(.tour-cap > *, .tour-cap .t-beats > li, .tour-cap .t-faces > li, .tour-cap .t-ledger > div, .tour-cap .pg-qa > details, .tour-cap .pg-gloss > div) { transition: opacity 180ms var(--ease-out); }
+html[data-gone-js] .tour-cap [data-gone] { opacity: 0; }
 
 /* the side scrim (desktop): fixed, static, shaped like the first screen's; solid under the caption, then a 190 px fade into the hall */
 .tour-scrim { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
@@ -92,15 +129,18 @@ html[data-tour][data-scrolled="1"] .tb:not(.inner)::before { opacity: 1; }
 .t-curve .now i::after { content: ""; position: absolute; left: 3px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--ink); }
 .t-curve .now b { position: absolute; right: 14px; bottom: 6px; white-space: nowrap; color: var(--ink-2); }
 
-/* ------------------------------ the ledger plate (§7.18) ------------------------------ */
+/* ------------------------------ the ledger: three rows straight on the scrim (§7.18, no plate on the tour) ------------------------------ */
 
-.t-ledger { --r: var(--r-plate); margin: 0; padding: 6px; display: grid; background: var(--ground-2); }
-.t-ledger > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; padding: 0 16px; border-radius: var(--r-key-xs); }
+/* the rows hang 12 px outside the caption so the label sits on its edge and the value ends on the other; a well wash on hover only */
+.t-ledger { margin: 0 -12px; padding: 0; display: grid; background: none; }
+.t-ledger > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; padding: 0 12px; border-radius: var(--r-key-xs); transition: background-color 140ms var(--ease-out); }
+.t-ledger > div:hover { background: var(--ground-3); }
 .t-ledger dt { font: 500 17px/1.3 var(--font-sans); color: var(--ink-2); }
 .t-ledger dd { margin: 0; display: inline-flex; align-items: baseline; white-space: nowrap; }
 .t-ledger dd .num-m { font-size: 24px; }
 .t-ledger dd .unit { font-size: 14px; }
-.t-ledger.wait { height: 180px; }
+.t-ledger.wait { height: 168px; }
+@media (prefers-reduced-motion: reduce) { .t-ledger > div { transition: none; } }
 .t-identity { max-width: 44ch; }
 
 /* ------------------------------ commands over the hall: tokens, no plate ------------------------------ */
@@ -124,9 +164,9 @@ html[data-tour][data-scrolled="1"] .tb:not(.inner)::before { opacity: 1; }
 .tour-cap .pg-swarm-facts .label { color: var(--ink-2); }
 .tour-cap .pg-swarm .lbl, .tour-cap .pg-swarm .ax { fill: var(--ink-2); }
 
-/* ------------------------------ questions over the dimmed room ------------------------------ */
+/* ------------------------------ questions over the dimmed room: rows (site.css), five of them ------------------------------ */
 
-.tour-cap.wide .pg-qa { width: 100%; }
+.tour-cap .pg-qa summary { text-shadow: var(--halo); }
 
 /* ------------------------------ the footer: a short fade, then the deepest ground ------------------------------ */
 
