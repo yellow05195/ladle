@@ -41,7 +41,7 @@ function FrameDriver({ quality, onLowDpr }: { quality: Quality; onLowDpr?: (r: n
   const paced = quality === "low" && softwareGpu();
   // res: the drawing buffer's size, "move" while the camera travels, "rest" once it has settled (quality.ts lowDpr);
   // restOk goes false on a machine whose sharp frames cost too much (the scroll would wait on them)
-  const pace = useRef({ askedAt: 0, timer: 0, costs: [] as number[], rests: [] as number[], since: 0, alive: false, res: "move" as "move" | "rest", restOk: true });
+  const pace = useRef({ askedAt: 0, timer: 0, costs: [] as number[], rests: [] as number[], since: 0, alive: false, res: "move" as "move" | "rest", restOk: true, warmAt: 0, frames: 0, bad: 0 });
   const setRes = useCallback((r: "move" | "rest") => {
     const p = pace.current;
     if (p.res === r) return;
@@ -64,14 +64,20 @@ function FrameDriver({ quality, onLowDpr }: { quality: Quality; onLowDpr?: (r: n
     }
     if (settled !== (p.res === "rest")) setRes(settled ? "rest" : "move");
     if (hall.get().warm && p.res === "move") {
-      p.costs.push(cost);
-      if (!p.since) p.since = now;
-      // ~3 s of frames, then a verdict: a median past GIVE_UP_MS is a machine that cannot hold even this (the poster)
-      if (now - p.since > 3000) {
-        const a = [...p.costs].sort((x, y) => x - y);
-        const med = a[a.length >> 1] ?? 0;
-        p.costs = []; p.since = 0;
-        if (med > GIVE_UP_MS) { p.alive = false; hall.set({ quality: "none" }); return; }
+      if (!p.warmAt) p.warmAt = now;
+      // the first seconds after warm draw what the driver still builds on first use (hundreds of ms a frame on a
+      // software GPU, then ~50): no verdict on them (judged, they sent a capable machine to the poster at ~5 s)
+      if (++p.frames > 12 && now - p.warmAt > 6000) {
+        p.costs.push(cost);
+        if (!p.since) p.since = now;
+        // ~3 s of frames, then a verdict: two medians in a row past GIVE_UP_MS is a machine that cannot hold even this (the poster)
+        if (now - p.since > 3000) {
+          const a = [...p.costs].sort((x, y) => x - y);
+          const med = a[a.length >> 1] ?? 0;
+          p.costs = []; p.since = 0;
+          if (med <= GIVE_UP_MS) p.bad = 0;
+          else if (++p.bad >= 2) { p.alive = false; hall.set({ quality: "none" }); return; }
+        }
       }
     }
     p.timer = window.setTimeout(() => { if (p.alive) { p.askedAt = performance.now(); invalidate(); } }, Math.max(1000 / 15, cost * PACE_GAP));

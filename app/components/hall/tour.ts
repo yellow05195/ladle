@@ -105,9 +105,10 @@ export const TOUR: TourStop[] = [
   // VI · open books: the bear host, the house, from above its front (text left, over the dark floor)
   {
     id: "books",
-    desk: { pos: [2.53, 3.0, 0.21], look: [4.5, 1.0, -1.0], fov: 41.8, off: 0.14 },
+    // (v25.1: the bear stands on a 0.38 m podium now: the look rises with him)
+    desk: { pos: [2.53, 3.0, 0.21], look: [4.5, 1.3, -1.0], fov: 41.8, off: 0.14 },
     // fix:scroll:1: portrait from in front of the bear, low (the desktop's view from above would leave the drum under the text)
-    port: { pos: [3.53, 1.59, 2.41], look: [4.5, 0.6, -1.0], fov: 58.6, off: 0.23 },
+    port: { pos: [3.53, 1.59, 2.41], look: [4.5, 0.9, -1.0], fov: 58.6, off: 0.23 },
     // fix:scroll:1: a push in from the front, over the felt's edge (2.9 m and more while over it), the view turning only
     // from the ticker to the bear (51 to 58 degrees of heading, never away and back: it swung 68 degrees off and back)
     // fix:scroll:r3: a last point on the line in (the path turns back at the bear, so without it the curve looped past the
