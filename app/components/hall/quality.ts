@@ -123,15 +123,29 @@ export async function detectQuality(): Promise<Quality> {
  * REST_LINES once it has settled (the room still breathes, at fewer frames, but sharp: the 420-line picture read as
  * pixelated at rest), never above 1.
  */
-const LOW_LINES = 460, REST_LINES = 760;
-export function lowDpr(rest = false): number {
-  if (typeof window === "undefined") return 1;
-  return Math.max(0.25, Math.min(1, (rest ? REST_LINES : LOW_LINES) / Math.max(1, window.innerHeight)));
+const LOW_LINES = 460, REST_SMALL_LINES = 760;
+/** dev only: ?lines=move,rest overrides the travel and the middle rest sizes (measuring a software GPU's cost per size) */
+function devLines(): [number, number] | null {
+  if (process.env.NODE_ENV === "production" || typeof window === "undefined") return null;
+  const m = /[?&]lines=(\d+),(\d+)/.exec(window.location.search);
+  return m ? [Number(m[1]), Number(m[2])] : null;
 }
-/** v25.1: the camera has been still this long (ms): the low tier draws at its rest size */
+/**
+ * The low tier's pixel ratio: "move" while the camera travels (LOW_LINES tall), "rest" for the held sharp frame (the
+ * screen's own size: ratio 1), "restSmall" when that frame cost too much (REST_SMALL_LINES tall).
+ */
+export function lowDpr(size: "move" | "rest" | "restSmall" = "move"): number {
+  if (typeof window === "undefined") return 1;
+  if (size === "rest") return 1;
+  const [move, small] = devLines() ?? [LOW_LINES, REST_SMALL_LINES];
+  return Math.max(0.25, Math.min(1, (size === "move" ? move : small) / Math.max(1, window.innerHeight)));
+}
+/** v25.1: the camera has been still this long (ms): the low tier draws its sharp frame and holds it */
 export const REST_AFTER_MS = 450;
-/** v25.1: a rest frame's median cost (ms) past which the low tier stays at its travel size (the next scroll would wait on it) */
-export const REST_MAX_MS = 260;
+/** v25.1 (r2): a held frame past this cost (ms) makes the rest size the middle one (the next scroll waits on a held frame) */
+export const REST_MAX_MS = 1400;
+/** v25.1 (r2): a held frame is drawn again this often (ms), so the room still lives (the drum, a late arrival) */
+export const REST_REFRESH_MS = 6000;
 
 /**
  * v25.1: the low tier's pacing. A software frame is drawn in the GPU process, which also composites the page: back to

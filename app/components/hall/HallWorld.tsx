@@ -21,12 +21,16 @@ import { FloorTicker } from "./FloorTicker";
 import { HallEnv, HallScene, shellReady } from "./HallScene";
 import { Ladle, ladleReady } from "./Ladle";
 import { Staff } from "./Staff";
-import { hall, useHall, type Quality } from "./store";
+import { hall, hallBus, useHall, type Quality } from "./store";
 import * as THREE from "three";
 import { TOUR, tourBus, tourMode, tourPose, type TourPose } from "./tour";
 import { onScrollInput, scrollState, scrollingNow } from "./tour/scroll";
-import { FRAME_WINDOW_MS, GIVE_UP_MS, PACE_GAP, REST_AFTER_MS, REST_MAX_MS, frameVerdict, lowDpr, softwareGpu } from "./quality";
+import { FRAME_WINDOW_MS, GIVE_UP_MS, PACE_GAP, REST_AFTER_MS, REST_MAX_MS, REST_REFRESH_MS, frameVerdict, lowDpr, softwareGpu } from "./quality";
 import { WarmGate } from "./WarmGate";
+
+/** v25.1 (r2): what a held frame shows of the round: which round, who is in it, its phase (the live window is re-emitted
+ * at every slot; a held frame redrawn on each of those was a sharp frame every 0.4 s) */
+const roundSig = () => { const w = hallBus.w; return w ? `${w.id}|${w.entries.length}|${w.phase}` : ""; };
 
 function FrameDriver({ quality, onLowDpr }: { quality: Quality; onLowDpr?: (r: number) => void }) {
   const { setFrameloop, invalidate, gl } = useThree();
@@ -39,30 +43,56 @@ function FrameDriver({ quality, onLowDpr }: { quality: Quality; onLowDpr?: (r: n
   // v25.1: a software GPU's low tier is paced (quality.ts PACE_GAP): the next frame is asked once the last one has had
   // its cost again in free time, so the GPU process, which composites the page too, keeps time for the scroll
   const paced = quality === "low" && softwareGpu();
-  // res: the drawing buffer's size, "move" while the camera travels, "rest" once it has settled (quality.ts lowDpr);
-  // restOk goes false on a machine whose sharp frames cost too much (the scroll would wait on them)
-  const pace = useRef({ askedAt: 0, timer: 0, costs: [] as number[], rests: [] as number[], since: 0, alive: false, res: "move" as "move" | "rest", restOk: true, warmAt: 0, frames: 0, bad: 0 });
+  // res: the drawing buffer's size, "move" while the camera travels, "rest" once it has settled (quality.ts lowDpr).
+  // v25.1 (r2): at rest the hall draws ONE sharp frame at the screen's own size and holds it (no idle animation): a
+  // software GPU's sharp frame costs ~0.5 s, which redrawn in a loop either froze the page or, judged too dear, left the
+  // picture at its travel size (the "pixelated" hall). The held frame is redrawn when the reader moves (the travel size
+  // at once), when the round changes (roundSig: a round, an arrival, a phase; not every slot's tick), and every REST_REFRESH_MS; one that costs past REST_MAX_MS
+  // makes the rest size a middle one (restSmall) for the visit
+  const pace = useRef({ askedAt: 0, timer: 0, costs: [] as number[], since: 0, alive: false, res: "move" as "move" | "rest", restSmall: false, restDrawn: 0, holding: false, ver: "", warmAt: 0, frames: 0, bad: 0 });
   const setRes = useCallback((r: "move" | "rest") => {
     const p = pace.current;
     if (p.res === r) return;
     p.res = r;
-    onLowDpr?.(lowDpr(r === "rest"));
+    p.restDrawn = 0;
+    onLowDpr?.(lowDpr(r === "rest" ? (p.restSmall ? "restSmall" : "rest") : "move"));
   }, [onLowDpr]);
+  /** a held frame is drawn again (and the paced loop runs on from it) */
+  const kick = useCallback(() => {
+    const p = pace.current;
+    if (!p.alive || !p.holding) return;
+    p.holding = false;
+    clearTimeout(p.timer);
+    p.askedAt = performance.now();
+    invalidate();
+  }, [invalidate]);
   // the reader's wheel, finger or key: the small, fast picture at once (the camera is about to travel)
-  useEffect(() => (paced ? onScrollInput(() => setRes("move")) : undefined), [paced, setRes]);
+  useEffect(() => (paced ? onScrollInput(() => { setRes("move"); kick(); }) : undefined), [paced, setRes, kick]);
+  // the round changed (an entry, a phase): the held frame is drawn again
+  useEffect(() => {
+    if (!paced) return;
+    const id = window.setInterval(() => { const p = pace.current; if (p.holding && roundSig() !== p.ver) kick(); }, 500);
+    return () => clearInterval(id);
+  }, [paced, kick]);
   useFrame(() => {
     const p = pace.current;
     if (!p.alive || !p.askedAt) return;
     const now = performance.now();
     const cost = now - p.askedAt;
     p.askedAt = 0;
-    const settled = p.restOk && !scrollingNow(REST_AFTER_MS) && !tourBus.jump && now - scrollState.inputAt > REST_AFTER_MS;
-    if (p.res === "rest") {
-      // sharp frames that cost too much keep the picture small for the rest of the visit
-      p.rests.push(cost);
-      if (p.rests.length >= 6) { const a = [...p.rests].sort((x, y) => x - y); p.rests = []; if ((a[3] ?? 0) > REST_MAX_MS) { p.restOk = false; setRes("move"); } }
-    }
+    const settled = !scrollingNow(REST_AFTER_MS) && !tourBus.jump && now - scrollState.inputAt > REST_AFTER_MS;
     if (settled !== (p.res === "rest")) setRes(settled ? "rest" : "move");
+    else if (p.res === "rest" && ++p.restDrawn >= 2) {
+      // (the first frame after the switch may still be at the travel size: the second is the sharp one) hold it
+      if (cost > REST_MAX_MS && !p.restSmall) { p.restSmall = true; p.res = "move"; setRes("rest"); }
+      else {
+        p.holding = true;
+        p.ver = roundSig();
+        if (process.env.NODE_ENV !== "production") ((window as unknown as { __paceLog?: [string, number][] }).__paceLog ??= []).push(["held", Math.round(cost)]);
+        p.timer = window.setTimeout(kick, REST_REFRESH_MS);
+        return;
+      }
+    }
     if (hall.get().warm && p.res === "move") {
       if (!p.warmAt) p.warmAt = now;
       // the first seconds after warm draw what the driver still builds on first use (hundreds of ms a frame on a
@@ -80,6 +110,7 @@ function FrameDriver({ quality, onLowDpr }: { quality: Quality; onLowDpr?: (r: n
         }
       }
     }
+    if (process.env.NODE_ENV !== "production") ((window as unknown as { __paceLog?: [string, number][] }).__paceLog ??= []).push([p.res, Math.round(cost)]);
     p.timer = window.setTimeout(() => { if (p.alive) { p.askedAt = performance.now(); invalidate(); } }, Math.max(1000 / 15, cost * PACE_GAP));
   });
   useEffect(() => {
@@ -347,7 +378,7 @@ function HallWorld({ quality, phone, compact = false }: { quality: Quality; phon
   // the high tier's ratio: the screen's own up to 1.5, then whatever AdaptiveDpr finds the GPU can hold
   const maxDpr = quality === "high" ? Math.min(1.5, Math.max(1, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)) : 1;
   const [dpr, setDpr] = useState(maxDpr);
-  const gl = useMemo(() => ({ antialias: quality !== "low", powerPreference: "high-performance" as const, alpha: false, preserveDrawingBuffer: process.env.NODE_ENV !== "production" }), [quality]);
+  const gl = useMemo(() => ({ antialias: quality !== "low" || (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && /[?&]aa=1/.test(window.location.search)), powerPreference: "high-performance" as const, alpha: false, preserveDrawingBuffer: process.env.NODE_ENV !== "production" }), [quality]);
   const camera = useMemo(() => ({ fov: 30, position: [0, 6, 11.6] as [number, number, number], near: 0.1, far: 60 }), []);
   // the canvas is fixed: its box never moves with the scroll (no measuring on scroll)
   const resize = useMemo(() => ({ scroll: false }), []);
@@ -363,7 +394,7 @@ function HallWorld({ quality, phone, compact = false }: { quality: Quality; phon
   const mountedAll = step >= MOUNT_STEPS;
   // v25.1: the low tier's drawing buffer is about 460 lines tall while the camera travels, 760 once it rests (quality.ts
   // lowDpr; FrameDriver switches it), the browser scales it up
-  const [lowRatio, setLowRatio] = useState(() => (quality === "low" ? lowDpr() : 1));
+  const [lowRatio, setLowRatio] = useState(() => (quality === "low" ? lowDpr("move") : 1));
   const driver = useMemo(() => <FrameDriver quality={quality} onLowDpr={setLowRatio} />, [quality]);
   const clock = useMemo(() => <MountSteps step={step} next={nextStep} />, [step, nextStep]);
   const gate = useMemo(() => (quality === "none" ? null : <WarmGate mounted={mountedAll} />), [quality, mountedAll]);
