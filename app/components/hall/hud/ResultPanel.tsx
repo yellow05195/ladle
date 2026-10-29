@@ -11,22 +11,91 @@
  * one style, the sums computed, never typed. No colour on any value; never
  * "play again"; no main key. It folds after the same hold for every result
  * (RoomHud).
+ *
+ * Chain mode (v21.3; v25: no "take to my wallet", LADLE never leaves the
+ * game): the scoop sits in the program until the viewer sells it back, so
+ * the keys are the sell back and "Keep LADLE", as in the demo; what is left
+ * and what was done come from the live snapshot, so a result reopened later
+ * is still current. `LeftStub` sells back, at the price it shows, an older
+ * round's scoop still in the program. `BackStub` says
+ * when a round of the viewer's was not drawn (its randomness never came) and
+ * gives their stake back, in full (the sdk's refund, paid by the viewer).
  */
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import type { T } from "../../../i18n";
 import { useT } from "../../../i18n/client";
-import type { LiveWindow } from "../../../lib/data/types";
+import type { LiveWindow, ScoopLeft, ScoopOutcome, StakeBack } from "../../../lib/data/types";
 import { formatSol } from "../../../lib/format";
 import { multiplierOf } from "../../../lib/law-settle";
 import { playerColor } from "../../../lib/colors";
 import { HIcon } from "../../ui/icons";
 import { Arr } from "../../ui/house";
-import { useLive } from "../../live/LiveProvider";
+import { useLiveActions, useLiveSelect } from "../../live/LiveProvider";
 import { ladle, mult, roundNum, sumDecimals } from "../fmt";
 import { hallBus, useHall } from "../store";
 import { ShareDialog } from "./ShareDialog";
 
 const sol4 = (l: bigint) => formatSol(l, 4);
+
+/** Why a sell back did not happen, in one line (the wallet said no, the price moved past its bound, or the transaction failed). */
+export function txReason(t: T, e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/reject|denied|cancel|declin/i.test(msg)) return t("h.reason.declined");
+  return /price moved|SlippageExceeded/i.test(msg) ? t("h.rs.priceMoved") : t("h.rs.takeFailed");
+}
+
+/**
+ * Chain: the viewer's scoops still in the program from rounds not on screen,
+ * the newest first, sold back one at a time at the price the line shows (the
+ * sale is bound to it: SlippageExceeded past 1 % less). A secondary key, like
+ * the folded result's Open: the dock's scoop key stays the one main key on screen.
+ */
+export function LeftStub({ left, phone = false }: { left: ScoopLeft[]; phone?: boolean }) {
+  const t = useT();
+  const { sellBack } = useLiveActions();
+  const [busy, setBusy] = useState(false);
+  const [why, setWhy] = useState<string | null>(null);
+  const x = left[0]!;
+  const vars = { n: roundNum(x.id), tokens: ladle(x.tokens), sol: sol4(x.sellBack) };
+  const text = why ?? (left.length > 1 ? t("h.rs.leftMore", { ...vars, k: left.length - 1 }) : t("h.rs.left", vars));
+  const sell = () => {
+    if (busy) return;
+    setBusy(true); setWhy(null);
+    void sellBack(x.id).catch((e) => setWhy(txReason(t, e))).finally(() => setBusy(false));
+  };
+  const key = <button type="button" className={`key sec ${phone ? "xs" : "s"} ${busy ? "busy" : ""}`} onClick={sell} aria-disabled={busy || undefined}>{busy ? t("h.dock.waiting") : t("h.rs.sellShort")}</button>;
+  return phone
+    ? <div className="pnote" aria-live="polite"><span className="t">{text}</span>{key}</div>
+    : <div className="rs-stub" aria-live="polite"><span>{text}</span>{key}</div>;
+}
+
+/**
+ * Chain: the viewer's stakes in rounds that were not drawn, newest first, taken back one at a time. Shown before the
+ * scoops left (SOL waiting in a round matters more), with the same secondary key.
+ */
+export function BackStub({ back, phone = false }: { back: StakeBack[]; phone?: boolean }) {
+  const t = useT();
+  const { refund } = useLiveActions();
+  const [busy, setBusy] = useState(false);
+  const [why, setWhy] = useState<string | null>(null);
+  const x = back[0]!;
+  const vars = { n: roundNum(x.id), sol: sol4(x.amount) };
+  const text = why ?? (back.length > 1 ? t("h.rs.backMore", { ...vars, k: back.length - 1 }) : t("h.rs.back", vars));
+  const take = () => {
+    if (busy) return;
+    setBusy(true); setWhy(null);
+    void refund(x.id).catch((e) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      setWhy(/reject|denied|cancel|declin/i.test(msg) ? t("h.reason.declined") : t("h.rs.backFailed"));
+    }).finally(() => setBusy(false));
+  };
+  const key = <button type="button" className={`key sec ${phone ? "xs" : "s"} ${busy ? "busy" : ""}`} onClick={take} aria-disabled={busy || undefined}>{busy ? t("h.dock.waiting") : t("h.rs.backKey")}</button>;
+  return phone
+    ? <div className="pnote" aria-live="polite"><span className="t">{text}</span>{key}</div>
+    : <div className="rs-stub" aria-live="polite"><span>{text}</span>{key}</div>;
+}
+
 /** "ff3429a1…b127" → "ff34 29a1 … b127" */
 export const seedGroups = (hex: string) => `${hex.slice(0, 4)} ${hex.slice(4, 8)} … ${hex.slice(-4)}`;
 
@@ -45,17 +114,30 @@ export function useResultRows(w: LiveWindow, myScarf?: string) {
   }, [w, myScarf]);
 }
 
+/** v21.4 (perf): chain only, what is left of round `id` and what the viewer did with it, as the live snapshot says (re-read on a tick, re-rendered only when it changes) */
+const scoopLeftOf = (x: LiveWindow | null, id: string): ScoopLeft | null => x?.scoopsLeft?.find((y) => y.id === id) ?? null;
+const sameScoop = (a: ScoopLeft | null, b: ScoopLeft | null) => a === b || (!!a && !!b && a.id === b.id && a.tokens === b.tokens && a.sellBack === b.sellBack);
+const outcomeOf = (x: LiveWindow | null, id: string): ScoopOutcome | null => x?.outcomes?.[id] ?? null;
+const sameOutcome = (a: ScoopOutcome | null, b: ScoopOutcome | null) => a === b || (!!a && !!b && a.kind === b.kind && a.tokens === b.tokens && a.sol === b.sol);
+
 export function ResultSheet({ w, myScarf, live, head, onClose }: { w: LiveWindow; myScarf?: string; live: boolean; head?: ReactNode; onClose: () => void }) {
   const t = useT();
-  const { sellBack } = useLive();
+  const { sellBack } = useLiveActions();
   const [share, setShare] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [selling, setSelling] = useState(false);
+  const [why, setWhy] = useState<string | null>(null);
   const s = w.settlement!;
   const n = roundNum(w.id);
   const { rows, min, max, sum } = useResultRows(w, myScarf);
   const mine = w.mineIndex !== null ? rows[w.mineIndex] : undefined;
-  const sold = w.phase === "sold";
+  // chain: what is still in the program for this round, and what the viewer did with it, from the live snapshot
+  const chain = w.source === "chain";
+  const left = useLiveSelect((x) => (chain ? scoopLeftOf(x, w.id) : null), { active: chain, key: w.id, equal: sameScoop });
+  const done = useLiveSelect((x) => (chain ? outcomeOf(x, w.id) : null), { active: chain, key: w.id, equal: sameOutcome });
+  const sold = w.phase === "sold" || done?.kind === "sold";
+  const soldFor = w.soldFor ?? (done?.kind === "sold" ? done.sol : null);
+  const taken = done?.kind === "taken";
   const bounty = w.total - s.toCurve - s.platformFee - s.hostFee;
   // the "In: total = parts" line adds up on screen: the fewest decimals (3 to 9) at which the shown parts sum to the shown total
   // (formatSol truncates, so at 3 decimals 2.734 = 2.706 + 0.027 could be printed; verify pass)
@@ -70,6 +152,11 @@ export function ResultSheet({ w, myScarf, live, head, onClose }: { w: LiveWindow
   }, [onClose, share]);
 
   const doSell = () => { setSelling(true); void sellBack().finally(() => { setSelling(false); setConfirm(false); }); };
+  const doSellChain = () => {
+    if (selling) return;
+    setSelling(true); setWhy(null);
+    void sellBack(w.id).catch((e) => setWhy(txReason(t, e))).finally(() => { setSelling(false); setConfirm(false); });
+  };
 
   // §7.12: 440 wide at most, and never over the drum (it may enter the clear zone's padding)
   const drumRight = useHall((h) => (h.drumRect ? Math.round((h.drumRect.x + h.drumRect.w) / 8) * 8 : null));
@@ -92,7 +179,27 @@ export function ResultSheet({ w, myScarf, live, head, onClose }: { w: LiveWindow
   }, [drumRight]);
   useEffect(() => () => { document.documentElement.style.removeProperty("--rs-w"); }, []);
 
-  const scoopKeys = sold || !live ? null : confirm ? (
+  // chain: sell back (with its confirm) and keep, as in the demo, while the scoop is in the program (it never leaves for a wallet)
+  const chainKeys = !left || sold || taken ? null : confirm ? (
+    <div className="confirm" role="group" aria-label={t("h.rs.sell")}>
+      <p>{t("h.rs.confirmLine", { tokens: ladle(left.tokens), sol: sol4(left.sellBack) })}</p>
+      <div className="pair">
+        <button type="button" className={`key char s ${selling ? "busy" : ""}`} onClick={doSellChain} aria-disabled={selling || undefined}>{selling ? t("h.rs.selling") : t("h.rs.confirm")}</button>
+        <button type="button" className="key char s" onClick={() => setConfirm(false)} disabled={selling}>{t("h.rs.cancel")}</button>
+      </div>
+    </div>
+  ) : (
+    <>
+      <div className="pair">
+        <button type="button" className="key char s" onClick={() => { setWhy(null); setConfirm(true); }} aria-label={t("h.rs.sell")}>
+          <span className="lg" aria-hidden="true">{t("h.rs.sell")}</span><span className="sm" aria-hidden="true">{t("h.rs.sellShort")}</span>
+        </button>
+        <button type="button" className="key char s" onClick={onClose}>{t("h.rs.keep")}</button>
+      </div>
+      <p className="sub note" aria-live="polite">{why ?? t("h.rs.keepNote")}</p>
+    </>
+  );
+  const scoopKeys = chain ? chainKeys : sold || !live ? null : confirm ? (
     <div className="confirm" role="group" aria-label={t("h.rs.sell")}>
       <p>{t("h.rs.confirmLine", { tokens: ladle(s.myShare ?? 0n), sol: sol4(s.mySellBack ?? 0n) })}</p>
       <div className="pair">
@@ -123,8 +230,10 @@ export function ResultSheet({ w, myScarf, live, head, onClose }: { w: LiveWindow
         <div className={`mine plate-cream ${confirm ? "confirming" : ""}`}>
           <span className="label">{t("h.rs.yours")}</span>
           <p className="num-l">{ladle(s.myShare)}<span className="unit">LADLE</span></p>
-          {sold && w.soldFor !== null ? (
-            <p className="sold">{t("h.rs.soldShort", { sol: sol4(w.soldFor) })} <span className="sub">· {mult(s.myMultiplier)}</span></p>
+          {sold && soldFor !== null ? (
+            <p className="sold">{t("h.rs.soldShort", { sol: sol4(soldFor) })} <span className="sub">· {mult(s.myMultiplier)}</span></p>
+          ) : chain ? (
+            <p className="sub">{taken ? t("h.rs.inWallet", { m: mult(s.myMultiplier) }) : left ? t("h.rs.subLine", { m: mult(s.myMultiplier), sol: sol4(left.sellBack) }) : t("h.rs.kept", { m: mult(s.myMultiplier) })}</p>
           ) : (
             <p className="sub">{live ? t("h.rs.subLine", { m: mult(s.myMultiplier), sol: sol4(s.mySellBack ?? 0n) }) : t("h.rs.kept", { m: mult(s.myMultiplier) })}</p>
           )}

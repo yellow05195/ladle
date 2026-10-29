@@ -7,7 +7,7 @@
  * a Display L headline, the lede, one block (the beats with their discs,
  * facts, the ledger plate, the small curve, the swarm, the portraits, the
  * question plates), then one link to the inner page for the long version.
- * No card: type over the side scrim (TourScrim, tour.css) with the halo.
+ * No card: type over its own feathered ground (tour.css) with the halo.
  * A chapter that shows demo figures ends with the demo line.
  *
  * Data: the sample, the curve and the books load once the hall is lit and
@@ -22,7 +22,7 @@ import { plan } from "../../../lib/data/demo-plan";
 import { playerColor } from "../../../lib/colors";
 import { formatInt, formatSol } from "../../../lib/format";
 import { listLocalProfiles, scarfIdOf } from "../../../lib/profile";
-import { useLive } from "../../live/LiveProvider";
+import { useLiveSelect } from "../../live/LiveProvider";
 import { preloadPastScoops, Swarm, SwarmFacts, usePastScoops } from "../../PastDistribution";
 import { Faq } from "../../fx/Faq";
 import { RollingFigure } from "../../ui/house";
@@ -33,20 +33,20 @@ import { hall } from "../store";
 import { fill, P, TOUR_COPY as T } from "../sections/copy";
 import { Arr, commas, DemoNote, Glossary, Head2 } from "../sections/kit";
 import { useGenesis } from "../useHistory";
+import { whenStill } from "./scroll";
 
 /* ------------------------------ loading, off the scroll frame ------------------------------ */
 
 let idleReady = false;
 const idleWaiters = new Set<() => void>();
-/** Resolves once the hall is lit and the browser has an idle moment (at most 2.5 s later). */
+/** Resolves once the hall is lit and the browser has an idle moment while the page is not scrolling (v21.3). */
 function whenIdle(cb: () => void): () => void {
   if (idleReady) { cb(); return () => {}; }
   idleWaiters.add(cb);
   if (idleWaiters.size === 1) {
     const go = () => {
-      const ric = (window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
       const fire = () => { idleReady = true; const ws = [...idleWaiters]; idleWaiters.clear(); ws.forEach((w) => w()); };
-      if (ric) ric(fire, { timeout: 2500 }); else window.setTimeout(fire, 400);
+      whenStill(fire);
     };
     if (hall.get().lit) go();
     else {
@@ -94,12 +94,13 @@ function useHistoryRead<T>(get: (src: HistorySource) => Promise<T>, live: boolea
     if (!idle || !live || !src?.subscribeCurve) return;
     let alive = true, t = 0;
     const load = () => getRef.current(src).then((x) => { if (alive) setV(x); }).catch(() => {});
-    // the first refresh as the chapter comes near waits for an idle moment, off the scroll frame (verify r2:
-    // reading the history and re-rendering the chart there cost one 55-90 ms frame on the first scroll)
-    const ric = (window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void });
-    const first = ric.requestIdleCallback ? ric.requestIdleCallback(() => { if (alive) void load(); }, { timeout: 1200 }) : window.setTimeout(() => { if (alive) void load(); }, 300);
-    const off = src.subscribeCurve(() => { if (!t) t = window.setTimeout(() => { t = 0; load(); }, ms); });
-    return () => { alive = false; off(); if (t) clearTimeout(t); if (ric.cancelIdleCallback) ric.cancelIdleCallback(first); else clearTimeout(first); };
+    // the first refresh as the chapter comes near waits for an idle moment once the scroll has stopped, off the scroll
+    // frame (verify r2: reading the history and re-rendering the chart there cost one 55-90 ms frame on the first scroll)
+    const cancelFirst = whenStill(() => { if (alive) void load(); }, 1200);
+    // later refreshes wait for the scroll to stop too
+    let cancelLater = () => {};
+    const off = src.subscribeCurve(() => { if (!t) t = window.setTimeout(() => { t = 0; cancelLater(); cancelLater = whenStill(() => { if (alive) void load(); }, 1200); }, ms); });
+    return () => { alive = false; off(); if (t) clearTimeout(t); cancelFirst(); cancelLater(); };
   }, [idle, live, src, ms]);
   return v;
 }
@@ -131,59 +132,19 @@ function More({ href, children }: { href: string; children: ReactNode }) {
 }
 
 /**
- * The tour's ground (desktop): one static side scrim per side, fixed to the
- * viewport, shaped like the first screen's (solid under the caption, then a
- * 190 px fade into the hall). Each fades with how much of a caption of its
- * side is in the band, read by an IntersectionObserver (no scroll handler).
- * It also marks the footer in view, so the side index steps aside.
- * Portrait screens use the caption's own ground instead (tour.css).
+ * The tour's page furniture that is not a caption. fix:scroll:r3-2: the captions carry their own ground on every screen
+ * (tour.css, .tour-cap::before: it scrolls with the text on the compositor); the two side scrims fixed to the viewport
+ * that this drew are gone (between two close captions on opposite sides both stood at full and the hall went black).
+ * What is left: it marks the footer in view, so the side index steps aside, and fades rows out under the top bar in
+ * browsers without scroll-driven animations.
  */
 export function TourScrim() {
-  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const box = ref.current;
-    if (!box) return;
-    const L = box.querySelector<HTMLElement>(".l"), R = box.querySelector<HTMLElement>(".r");
-    if (!L || !R) return;
     const root = document.documentElement;
-    const caps = [...document.querySelectorAll<HTMLElement>(".tour-cap")];
-    const side = new Map<Element, "left" | "right">(caps.map((c) => [c, c.closest(".tour-ch")?.getAttribute("data-side") === "right" ? "right" : "left"]));
-    const pres = new Map<Element, { p: number; w: number }>();
-    const paint = () => {
-      let l = 0, r = 0, lw = 0, rw = 0;
-      for (const [el, v] of pres) {
-        if (side.get(el) === "right") { if (v.p > r) { r = v.p; rw = v.w; } }
-        else if (v.p > l) { l = v.p; lw = v.w; }
-      }
-      L.style.opacity = l.toFixed(2);
-      R.style.opacity = r.toFixed(2);
-      if (lw) L.style.setProperty("--cw", `${Math.round(lw)}px`);
-      if (rw) R.style.setProperty("--cw", `${Math.round(rw)}px`);
-    };
-    let io: IntersectionObserver | null = null;
-    const build = () => {
-      io?.disconnect();
-      const cs = getComputedStyle(root);
-      const topH = parseFloat(cs.getPropertyValue("--top-h")) || 72;
-      const railH = document.querySelector<HTMLElement>(".conserved")?.offsetHeight ?? 48;
-      io = new IntersectionObserver((es) => {
-        for (const e of es) {
-          const band = e.rootBounds?.height || window.innerHeight;
-          const half = Math.max(1, Math.min(e.boundingClientRect.height, band) * 0.5);
-          pres.set(e.target, { p: e.isIntersecting ? Math.min(1, e.intersectionRect.height / half) : 0, w: e.boundingClientRect.width });
-        }
-        paint();
-      }, { rootMargin: `-${Math.round(topH)}px 0px -${Math.round(railH)}px 0px`, threshold: Array.from({ length: 21 }, (_, i) => i / 20) });
-      caps.forEach((c) => io!.observe(c));
-    };
-    build();
     const foot = document.querySelector(".tour-foot");
     const fio = new IntersectionObserver((es) => { for (const e of es) { if (e.isIntersecting) root.dataset.tourFoot = "1"; else delete root.dataset.tourFoot; } }, { rootMargin: "0px 0px -30% 0px" });
     if (foot) fio.observe(foot);
-    let rt = 0;
-    const onResize = () => { clearTimeout(rt); rt = window.setTimeout(build, 200); };
-    window.addEventListener("resize", onResize);
-    return () => { io?.disconnect(); fio.disconnect(); window.removeEventListener("resize", onResize); clearTimeout(rt); delete root.dataset.tourFoot; };
+    return () => { fio.disconnect(); delete root.dataset.tourFoot; };
   }, []);
   // leaving under the top bar (tour.css): browsers without scroll-driven animations fade each row out with an IntersectionObserver
   useEffect(() => {
@@ -218,7 +179,7 @@ export function TourScrim() {
     window.addEventListener("resize", onResize);
     return () => { io?.disconnect(); mo.disconnect(); clearTimeout(t); window.removeEventListener("resize", onResize); delete root.dataset.goneJs; };
   }, []);
-  return <div ref={ref} className="tour-scrim" aria-hidden="true"><i className="l" /><i className="r" /></div>;
+  return null;
 }
 
 /* ------------------------------ the chapters ------------------------------ */
@@ -228,8 +189,8 @@ const BEAT: Record<Phase, number> = { open: 0, sealed: 1, seeded: 2, settled: 3,
 
 /** The four beats: a 38 px disc and its numeral, the title, one sentence. The beat the live round is in has the cream disc. */
 function Beats() {
-  const { w } = useLive();
-  const live = w ? BEAT[w.phase] : -1;
+  // v21.3: re-renders when the beat changes, not on every live tick
+  const live = useLiveSelect((w) => (w ? BEAT[w.phase] : -1));
   return (
     <ol className="t-beats">
       {T.how.beats.map((b, i) => (
@@ -259,9 +220,9 @@ export function HowChapter() {
 
 /** The room: everyone on the felt, in arrival order. */
 export function RoomChapter() {
-  const { w } = useLive();
-  // the round on the felt (the one the camera sees), not the next one filling up
-  const r = w ? { n: roundNum(w.id), players: w.entries.length } : null;
+  // the round on the felt (the one the camera sees), not the next one filling up; v21.3: re-renders when its count changes
+  const key = useLiveSelect((w) => (w ? `${roundNum(w.id)}|${w.entries.length}` : ""));
+  const r = key ? { n: key.slice(0, key.indexOf("|")), players: Number(key.slice(key.indexOf("|") + 1)) } : null;
   return (
     <Chapter id="room" side="right" label={T.room.label}>
       <Head2 id="room-h" l1={T.room.l1} l2={T.room.l2} />
@@ -439,7 +400,7 @@ export function GenesisChapter() {
 /** Questions: the whole room, dimmed, behind five question rows (no plates); every other question is on /about. */
 export function QuestionsChapter({ items }: { items: ReadonlyArray<{ q: string; a: string }> }) {
   return (
-    <Chapter id="questions" side="left" label={T.qa.label}>
+    <Chapter id="questions" side="right" label={T.qa.label}>
       <Head2 id="questions-h" l1={P.qa.l1} l2={P.qa.l2} />
       <Faq items={items} />
       <More href="/about#questions">{P.qa.more}</More>

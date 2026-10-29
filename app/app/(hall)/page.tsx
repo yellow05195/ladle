@@ -13,7 +13,7 @@ import { maxHostFeeBps, platformFeeBps } from "../../lib/measurements";
  * main key, HomeHud); below it the page is a tour of the live hall. The canvas
  * stays fixed behind the whole page and keeps playing; as the reader
  * scrolls, the camera visits what each chapter talks about (tour.ts) and
- * the chapter's text scrolls over it on a side scrim (TourScrim), never on
+ * the chapter's text scrolls over it on its own feathered ground, never on
  * a card: the drum (how a round plays), the crowd (the room), the ladle
  * (the scoop), the floor ticker (the curve), the bear host (open books),
  * the stands and the door (hosts), the scarves (Genesis), then the whole

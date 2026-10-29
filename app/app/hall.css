@@ -431,6 +431,8 @@ html:not([data-loaded]) body:has(.lights:not(.gone)) .conserved { z-index: 62; }
 .rsheet .mine .confirm p { font: 600 14.5px/1.4 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--on-cream); }
 /* while confirming, the confirm line says it all: the sub line steps aside */
 .rsheet .mine.confirming > .sub { display: none; }
+/* chain: what taking the LADLE does (or why it did not happen), under the keys */
+.rsheet .mine .sub.note { margin-top: 4px; font-size: 13px; text-wrap: pretty; }
 /* the two equal alternatives side by side */
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
 .pair .key { min-width: 0; height: auto; min-height: 44px; padding: 6px 8px; font-size: 15px; line-height: 1.15; white-space: normal; text-align: center; text-wrap: balance; }

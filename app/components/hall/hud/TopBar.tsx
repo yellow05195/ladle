@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { BRAND } from "../../../../config/brand";
 import { useT } from "../../../i18n/client";
 import { HIcon } from "../../ui/icons";
 import { PlayerPlate } from "../profile/PlayerPlate";
 import { useProfile } from "../profile/ProfileProvider";
 import { SoundToggle } from "./SoundToggle";
+import { onScrollY, scrollState } from "../tour/scroll";
 
 /**
  * The top bar (v21.1, §7.10). Hall routes: no surface (the top scrim reads
@@ -20,30 +21,38 @@ import { SoundToggle } from "./SoundToggle";
  * On the home, once the playbill (and its Play key) has scrolled away, a
  * compact Play key joins the bar, so the main action stays one press away.
  */
-export function TopBar({ solid = false, room = false }: { solid?: boolean; room?: boolean }) {
+export const TopBar = memo(function TopBar({ solid = false, room = false }: { solid?: boolean; room?: boolean }) {
   const t = useT();
   const path = usePathname();
   const { pubkey, profile, takeSeat } = useProfile();
   const [menu, setMenu] = useState(false);
   useEffect(() => setMenu(false), [path]);
-  // the home: the bar's Play appears once the playbill's own ticket is gone (faded on wide screens, scrolled under the bar when stacked)
+  // the home: the bar's Play appears once the playbill's own ticket is gone (faded on wide screens, scrolled under the bar when stacked).
+  // v21.3: from the hall's one scroll reader against the ticket's measured place (measured on resize and when the playbill
+  // changes size, never on a scroll frame)
   const home = path === "/" && !solid;
   const [past, setPast] = useState(false);
   useEffect(() => {
     if (!home) { setPast(false); return; }
-    let raf = 0;
-    const put = () => {
-      raf = 0;
-      const tk = document.querySelector(".playbill .key.main");
-      if (!tk) { setPast(false); return; }
-      const top = document.querySelector(".tb")?.getBoundingClientRect().height ?? 80;
-      setPast(window.innerWidth >= 1100 ? window.scrollY > 0.26 * window.innerHeight : tk.getBoundingClientRect().bottom < top + 4);
+    let keyBottom = -Infinity, barH = 80, wide = true, was: boolean | null = null;
+    const put = (y: number) => {
+      const v = Number.isFinite(keyBottom) && (wide ? y > 0.26 * (scrollState.vh || 800) : keyBottom - y < barH + 4);
+      if (v !== was) { was = v; setPast(v); }
     };
-    const on = () => { if (!raf) raf = requestAnimationFrame(put); };
-    put();
-    window.addEventListener("scroll", on, { passive: true });
-    window.addEventListener("resize", on);
-    return () => { window.removeEventListener("scroll", on); window.removeEventListener("resize", on); cancelAnimationFrame(raf); };
+    const measure = () => {
+      const tk = document.querySelector(".playbill .key.main");
+      barH = document.querySelector(".tb")?.getBoundingClientRect().height ?? 80;
+      wide = window.innerWidth >= 1100;
+      keyBottom = tk ? tk.getBoundingClientRect().bottom + window.scrollY : -Infinity;
+      put(scrollState.y);
+    };
+    const off = onScrollY(put);
+    measure();
+    const ro = new ResizeObserver(measure);
+    const pb = document.querySelector(".playbill");
+    if (pb) ro.observe(pb);
+    window.addEventListener("resize", measure);
+    return () => { off(); ro.disconnect(); window.removeEventListener("resize", measure); };
   }, [home]);
   useEffect(() => {
     if (!menu) return;
@@ -91,4 +100,4 @@ export function TopBar({ solid = false, room = false }: { solid?: boolean; room?
       ) : null}
     </header>
   );
-}
+});

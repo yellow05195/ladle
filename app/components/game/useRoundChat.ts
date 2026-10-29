@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { T } from "../../i18n";
 import type { DataSource, LiveWindow } from "../../lib/data/types";
 import { formatInt, formatMultiplier, formatPct, formatSol } from "../../lib/format";
-import { entryRound } from "../hall/hud/round";
+import { entryRound, haltLine } from "../hall/hud/round";
 import { multiplierOf } from "../../lib/law-settle";
 import { roundNo, type GameFacts, type Msg, type MsgIn } from "./types";
 
@@ -14,6 +14,21 @@ const MAX_MSGS = 140;
 export const solStr = (l: bigint) => formatSol(l, 3).replace(/\.?0+$/, "");
 
 interface Tracker { entries: number; said: Set<string> }
+
+/**
+ * v21.4: what the chat remembers (the log, the ids, each round's tracker and notice, the entry typed and not landed yet).
+ * The room holds it (`chatMem()` in a ref) and passes it in, so the chat can live in a small child that re-renders on an
+ * arrival without the room, and a switch between the room's phone and desk layouts (a phone turned sideways) remounts
+ * that child without losing the log.
+ */
+export interface ChatMem {
+  msgs: Msg[];
+  nextId: number;
+  tracker: Map<string, Tracker>;
+  roundNote: Map<string, { id: number; text: string }>;
+  pending: { lamports: bigint; id: string } | null;
+}
+export const chatMem = (): ChatMem => ({ msgs: [], nextId: 1, tracker: new Map(), roundNote: new Map(), pending: null });
 
 /**
  * The round chat as a hook. Fix r2, so the chat reads as people talking and
@@ -28,13 +43,14 @@ interface Tracker { entries: number; said: Set<string> }
  * header, never a chat line. Nothing here decides a result: it only reads
  * the snapshots.
  */
-export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = true, myName, onSeat, serving = false }: { w: LiveWindow | null; source: DataSource; enter: (amount: bigint) => void; sellBack: () => void; facts: GameFacts; t: T; seated?: boolean; myName?: string; onSeat?: () => void; serving?: boolean }) {
+export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = true, myName, onSeat, serving = false, mem }: { w: LiveWindow | null; source: DataSource; enter: (amount: bigint) => void; sellBack: () => void; facts: GameFacts; t: T; seated?: boolean; myName?: string; onSeat?: () => void; serving?: boolean; mem?: ChatMem }) {
   // a spectator's own command lines go unsigned (never "you", which reads as a player called you)
   const me = myName ?? "";
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const nextId = useRef(1);
-  const tracker = useRef(new Map<string, Tracker>());
-  const pending = useRef<{ lamports: bigint; id: string } | null>(null);
+  const own = useRef<ChatMem | null>(null);
+  const m = mem ?? (own.current ??= chatMem());
+  const [msgs, setLog] = useState<Msg[]>(() => m.msgs);
+  // every change of the log is kept in the memory too (the updater only computes: it may run twice)
+  const setMsgs = useCallback((f: (cur: Msg[]) => Msg[]) => setLog((cur) => (m.msgs = f(cur))), [m]);
   const wRef = useRef(w);
   wRef.current = w;
   const servingRef = useRef(serving);
@@ -42,11 +58,11 @@ export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = tr
 
   const push = useCallback((items: Array<MsgIn>) => {
     if (!items.length) return;
-    const withIds = items.map((m) => ({ ...m, id: nextId.current++ }) as Msg);
+    const withIds = items.map((x) => ({ ...x, id: m.nextId++ }) as Msg);
     setMsgs((cur) => [...cur, ...withIds].slice(-MAX_MSGS));
-  }, []);
+  }, [m, setMsgs]);
   /** each round's one notice: its message id and its current text */
-  const roundNote = useRef(new Map<string, { id: number; text: string }>());
+  const roundNote = m.roundNote;
 
   // the snapshots → chat lines
   useEffect(() => {
@@ -54,21 +70,21 @@ export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = tr
     const out: Array<MsgIn> = [];
     const n = roundNo(w.id);
     const sys = (text: string, title = t("chat.system"), link?: { href: string; hrefLabel: string }, personal?: boolean) => out.push({ kind: "sys", title, text, ...link, ...(personal ? { personal } : {}) });
-    let tr = tracker.current.get(w.id);
+    let tr = m.tracker.get(w.id);
     if (!tr) {
       tr = { entries: 0, said: new Set() };
-      tracker.current.set(w.id, tr);
+      m.tracker.set(w.id, tr);
     }
     // the round's one notice: written at its first entry, then its text changes in place (count, then sealed)
     const k = w.entries.length;
     if (k > 0) {
       const text = w.phase === "open" ? t(k === 1 ? "chat.nRoundOne" : "chat.nRound", { n, k }) : t(k === 1 ? "chat.nRoundSealedOne" : "chat.nRoundSealed", { n, k, slots: w.slotsTotal });
-      const note = roundNote.current.get(w.id);
+      const note = roundNote.get(w.id);
       if (!note) {
-        const id = nextId.current++;
-        roundNote.current.set(w.id, { id, text });
+        const id = m.nextId++;
+        roundNote.set(w.id, { id, text });
         setMsgs((cur) => [...cur, { id, kind: "notice", text, round: w.id } as Msg].slice(-MAX_MSGS));
-        if (roundNote.current.size > 40) { const first = roundNote.current.keys().next().value; if (first !== undefined) roundNote.current.delete(first); }
+        if (roundNote.size > 40) { const first = roundNote.keys().next().value; if (first !== undefined) roundNote.delete(first); }
       } else if (note.text !== text) {
         note.text = text;
         setMsgs((cur) => cur.map((m) => (m.id === note.id && m.kind === "notice" ? { ...m, text } : m)));
@@ -77,9 +93,9 @@ export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = tr
     for (let i = tr.entries; i < w.entries.length; i++) {
       const e = w.entries[i]!;
       if (e.mine) {
-        const p = pending.current;
+        const p = m.pending;
         if (p && p.id === w.id) {
-          pending.current = null;
+          m.pending = null;
           // the viewer's own line ("you: !scoop 0.25") is already in the log: only the bot answers
           out.push({ kind: "reply", title: t("chat.bot"), personal: true, text: e.amount < p.lamports ? t("chat.rCapped", { cap: facts.capPct, n, sol: solStr(e.amount) }) : t("chat.rEntered", { n, sol: solStr(e.amount) }) });
         } else {
@@ -107,7 +123,7 @@ export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = tr
     });
     if (ph === "sold" && w.soldFor !== null) once("sold", () => sys(t("chat.sysSold", { sol: formatSol(w.soldFor!, 4) }), t("chat.bot"), undefined, true));
     push(out);
-  }, [w, t, facts.capPct, push, me]);
+  }, [w, t, facts.capPct, push, me, m, roundNote, setMsgs]);
 
   const send = useCallback((text: string) => {
     const raw = text.trim().replace(/\s+/g, " ");
@@ -127,11 +143,12 @@ export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = tr
         if (cur!.phase === "open" && mine) { items.push(reply(t("chat.rAlready", { n, sol: solStr(mine.amount) }))); break; }
         // rounds are pipelined: while this one draws, its open sibling takes the entry
         const target = entryRound(cur, { serving: servingRef.current });
-        if (!target) { items.push(reply(mine ? t("chat.rPending", { n }) : t("chat.rClosed", { n }))); break; }
-        if (!Number.isFinite(x) || x < 0.01 || x > 5) { items.push(reply(t("chat.rBadAmount"))); break; }
+        // chain: no round takes entries (none yet, closed without its seal, the keeper late): the same line as the dock
+        if (!target) { items.push(reply(mine ? t("chat.rPending", { n }) : cur!.halt ? haltLine(t, cur!.halt, cur!.slotMs, cur!.slotsTotal) : t("chat.rClosed", { n }))); break; }
+        if (!Number.isFinite(x) || x < 0.1 || x > 5) { items.push(reply(t("chat.rBadAmount"))); break; }
         if (typeof source.enter !== "function") { items.push(reply(t("chat.rLoading"))); break; }
         const lamports = BigInt(Math.round(x * 1000)) * 1_000_000n;
-        pending.current = { lamports, id: target };
+        m.pending = { lamports, id: target };
         push(items);
         enter(lamports);
         return;
@@ -153,8 +170,10 @@ export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = tr
         const current = Number(n);
         const last = cur!.phase === "settled" || cur!.phase === "sold" ? current : current - 1;
         const want = arg ? Number(arg.replace(/^#/, "")) : last;
-        if (!Number.isInteger(want) || want < 1 || want > last) { items.push(reply(t("chat.rVerifyBad", { n: arg ?? "", last }))); break; }
-        items.push(reply(t("chat.rVerify", { n: want }), { href: `/window/demo-${want}`, hrefLabel: t("chat.open") }));
+        // chain rounds are numbered from 0 and their pages are /window/{index}; demo pages are /window/demo-{n}
+        const chain = cur!.source === "chain";
+        if (!Number.isInteger(want) || want < (chain ? 0 : 1) || want > last) { items.push(reply(t("chat.rVerifyBad", { n: arg ?? "", last }))); break; }
+        items.push(reply(t("chat.rVerify", { n: want }), { href: chain ? `/window/${want}` : `/window/demo-${want}`, hrefLabel: t("chat.open") }));
         break;
       }
       case "!sell": {
@@ -167,7 +186,7 @@ export function useRoundChat({ w, source, enter, sellBack, facts, t, seated = tr
       default: items.push(reply(t("chat.rUnknown", { cmd: raw.slice(0, 24) })));
     }
     push(items);
-  }, [enter, sellBack, source, facts, t, push, seated, me, onSeat]);
+  }, [enter, sellBack, source, facts, t, push, seated, me, onSeat, m]);
 
   return { msgs, send };
 }

@@ -78,18 +78,32 @@ export class Ledger {
   private nextId = 1;
   private listeners = new Set<() => void>();
   private activityListeners = new Set<() => void>();
+  /** when the replay's last round was served: the next one is served at least 300 ms after it */
+  private replayAt = 0;
 
   /** Replays rounds 1 … upTo with their planned entries. `closedAt(n)` gives each round's close time (ms). */
   replay(upTo: number, closedAt: (n: number) => number): void {
-    let prevAt = 0;
-    for (let n = 1; n <= upTo; n++) {
+    this.replayStep(1, upTo, closedAt);
+    this.replayEnd();
+  }
+
+  /**
+   * v21.4: rounds from … to of the replay, so that it can run in slices off the hydration task (mock.ts). The slices
+   * run in order from round 1, then replayEnd(); the ledger is then identical to one replay() (perf/ledger-eq.mjs).
+   */
+  replayStep(from: number, to: number, closedAt: (n: number) => number): void {
+    for (let n = from; n <= to; n++) {
       const pl = plan(n);
       const close = closedAt(n);
-      const at = Math.max(close + pl.delayMs + SEED_FALL_MS, prevAt + 300);
-      prevAt = at;
+      const at = Math.max(close + pl.delayMs + SEED_FALL_MS, this.replayAt + 300);
+      this.replayAt = at;
       const inputs = pl.entries.map((e, i) => ({ owner: e.owner, index: i, amount: e.amount }));
       this.buy(n, close, at, pl.seed, inputs, pl.entries.map((e) => e.label), [], true);
     }
+  }
+
+  /** The end of the replay. */
+  replayEnd(): void {
     // the history fills the activity list with its last served rounds and sells
     const recent: ActivityItem[] = [];
     for (let i = this.points.length - 1; i >= 0 && recent.length < 12; i--) {

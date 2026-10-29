@@ -2,7 +2,7 @@
 
 /**
  * Hands the connected wallet to the chain data source (app/lib/data/chain.ts)
- * so it can sign entries and sell-backs, when NEXT_PUBLIC_DATA_SOURCE=chain
+ * so it can sign entries, takes and sell-backs, when NEXT_PUBLIC_DATA_SOURCE=chain
  * and a market is configured. In demo mode entries always go to the demo
  * source, whichever wallet is connected.
  */

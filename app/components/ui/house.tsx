@@ -8,15 +8,53 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { BRAND } from "../../../config/brand";
 
+/** v21.4 (perf): the fill glides on the compositor (transform), not by its width */
+const GLIDE = "transform 400ms linear";
+/**
+ * The fill's offset (v21.4): the fill is the stem's whole length, moved left and clipped by the stem, its right end (the
+ * ball) at max(h, p W) as the width and min-width fill had it. Before the stem is measured: the same within a few px.
+ */
+const offset = (p: number, size: { w: number; h: number } | null) => (size && size.w > 0
+  ? `translateX(${(Math.max(size.h, p * size.w) - size.w).toFixed(2)}px)`
+  : `translateX(calc(${((p - 1) * 100).toFixed(3)}% + ${(1 - p).toFixed(4)} * var(--h)))`);
+
 /**
  * The progress stem: the ladle handle standing for time. A cream fill at
  * elapsed / total whose leading end is the saffron ball, the stem own
  * diameter; with nothing elapsed only the ball shows. Same progressbar role.
+ * v21.4 (perf): the fill moves by transform. A slot is shorter than a glide,
+ * so the stem glides nearly all the time; a width transition laid out and
+ * painted the page on every frame of it.
  */
-export function Stem({ elapsed, total = 92, thin = false, label = "Slots elapsed", className = "", instant = false }: { elapsed: number; total?: number; thin?: boolean; label?: string; className?: string; /** no width transition at all (the loader: the counter beside it must agree with it every frame) */ instant?: boolean }) {
+export function Stem({ elapsed, total = 92, thin = false, label = "Slots elapsed", className = "", instant = false }: { elapsed: number; total?: number; thin?: boolean; label?: string; className?: string; /** no transition at all (the loader: the counter beside it must agree with it every frame) */ instant?: boolean }) {
   const lit = Math.max(0, Math.min(total, Math.round(elapsed)));
+  const p = lit / Math.max(1, total);
+  const box = useRef<HTMLDivElement>(null);
   const fill = useRef<HTMLElement>(null);
   const prev = useRef(lit);
+  // the stem's length and thickness, measured when its size changes (never on a tick); a resize moves the ball at once
+  const size = useRef<{ w: number; h: number } | null>(null);
+  const pNow = useRef(p);
+  pNow.current = p;
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let id = 0;
+    const ro = new ResizeObserver(([e]) => {
+      const r = e!.contentRect;
+      if (size.current && size.current.w === r.width && size.current.h === r.height) return;
+      size.current = { w: r.width, h: r.height };
+      const f = fill.current;
+      if (!f) return;
+      f.style.transition = "none";
+      f.style.transform = offset(pNow.current, size.current);
+      void getComputedStyle(f).transform;
+      cancelAnimationFrame(id);
+      id = requestAnimationFrame(() => { f.style.transition = instant ? "none" : GLIDE; });
+    });
+    ro.observe(el);
+    return () => { ro.disconnect(); cancelAnimationFrame(id); };
+  }, [instant]);
   // forward ticks glide (400 ms linear); a new round (the fill shrinks) jumps, so the ball never runs backward
   useLayoutEffect(() => {
     const el = fill.current;
@@ -25,12 +63,12 @@ export function Stem({ elapsed, total = 92, thin = false, label = "Slots elapsed
     if (!el || instant || !back) return;
     el.style.transition = "none";
     void el.offsetWidth;
-    const id = requestAnimationFrame(() => { el.style.transition = ""; });
+    const id = requestAnimationFrame(() => { el.style.transition = GLIDE; });
     return () => cancelAnimationFrame(id);
   }, [lit, instant]);
   return (
-    <div className={`stem ${thin ? "thin" : ""} ${className}`} role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={lit} aria-label={label}>
-      <i ref={fill} style={{ width: `${(100 * lit) / Math.max(1, total)}%`, ...(instant ? { transition: "none" } : null) }} />
+    <div ref={box} className={`stem ${thin ? "thin" : ""} ${className}`} style={{ overflow: "hidden" }} role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={lit} aria-label={label}>
+      <i ref={fill} style={{ width: "100%", transform: offset(p, size.current), transition: instant ? "none" : GLIDE, willChange: "transform" }} />
     </div>
   );
 }
@@ -59,19 +97,38 @@ export function Arr({ ch = "→" }: { ch?: string }) {
 
 /** The advance of each digit 0-9 per (font, size, axes), measured once in the DOM (canvas ignores font-variation-settings). */
 const advances = new Map<string, number[]>();
+/** v21.4: measured while the webfont is still loading (the fallback's advances): shared until a font load ends, then measured again */
+const early = new Map<string, number[]>();
+let earlyHooked = false;
 function digitAdvances(el: HTMLElement): number[] {
   const cs = getComputedStyle(el);
   const key = `${cs.fontStyle}|${cs.fontWeight}|${cs.fontSize}|${cs.fontFamily}|${cs.fontVariationSettings}|${cs.fontFeatureSettings}|${cs.letterSpacing}`;
   const hit = advances.get(key);
   if (hit) return hit;
+  const loaded = document.fonts?.status === "loaded";
+  const was = loaded ? undefined : early.get(key);
+  if (was) return was;
+  // v21.4: the ten digits side by side in one probe, read after one layout (was one layout per digit); each in its
+  // own inline-block, so no digit is shaped (kerned) with its neighbour
   const probe = document.createElement("span");
   probe.setAttribute("aria-hidden", "true");
   probe.style.cssText = "position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;";
+  for (let d = 0; d < 10; d++) {
+    const c = document.createElement("span");
+    c.style.display = "inline-block";
+    c.textContent = String(d);
+    probe.appendChild(c);
+  }
   el.appendChild(probe);
-  const out: number[] = [];
-  for (let d = 0; d < 10; d++) { probe.textContent = String(d); out.push(probe.getBoundingClientRect().width); }
+  const out = Array.from(probe.children, (c) => c.getBoundingClientRect().width);
   probe.remove();
-  if (document.fonts?.status === "loaded" && out.every((x) => x > 0)) advances.set(key, out);
+  if (out.every((x) => x > 0)) {
+    if (loaded) advances.set(key, out);
+    else {
+      early.set(key, out);
+      if (!earlyHooked && document.fonts) { earlyHooked = true; document.fonts.addEventListener("loadingdone", () => early.clear()); }
+    }
+  }
   return out;
 }
 

@@ -1,6 +1,6 @@
 import type { T } from "../../i18n";
 import { formatDate, formatInt, formatPct } from "../../lib/format";
-import { g3MultAdvantage, g3Tolerance, g3TotalWindows, g4ChosenCap, g4ChosenRow, platformFeeBps, revealLatency, slotMs, windowSlots, type Measured } from "../../lib/measurements";
+import { g3MultAdvantage, g3Tolerance, g3TotalWindows, g4ChosenCap, g4ChosenRow, platformFeeBps, revealLatency, roundSlots, slotMs, type Measured } from "../../lib/measurements";
 import { g1Queries, g5PropertyWindows, g7Measurements } from "../../lib/project";
 /** A measured figure: the value, plus optional decimals, prefix and suffix. */
 export interface Num { value: number; decimals?: number; prefix?: string; suffix?: string }
@@ -22,7 +22,8 @@ export function buildGates(t: T, locale: string): { gates: Gate[]; verdictText: 
   const capRow = g4ChosenRow();
   const props = g5PropertyWindows();
   const slot = slotMs();
-  const slots = windowSlots();
+  // the market's round length (the demo's ~20 s without NEXT_PUBLIC_LADLE_WINDOW_SLOTS)
+  const slots = roundSlots();
   const g7 = g7Measurements();
   const fee = platformFeeBps();
   const pct0 = (x: number) => formatPct(x, 0);

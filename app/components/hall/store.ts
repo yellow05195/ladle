@@ -35,6 +35,8 @@ export interface HallState {
   loaded: Record<LoadKey, boolean>;
   dataFailed: boolean;
   glReady: boolean;
+  /** perf v21.4 (F1): every program of the scene is linked under its final environment and the first frames are drawn (WarmGate; it sets glReady with it). Until then the frame loop stays off */
+  warm: boolean;
   /** the loader has finished (lights up) */
   lit: boolean;
   /** 0 at the top, 1 when scrolled past 40 % of the viewport, 2 past two viewport heights */
@@ -72,6 +74,7 @@ const initial: HallState = {
   loaded: { fonts: false, env: false, shell: false, cradle: false, cast: false, data: false },
   dataFailed: false,
   glReady: false,
+  warm: false,
   lit: false,
   scroll: 0,
   paused: false,

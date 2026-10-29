@@ -9,7 +9,8 @@ import { PLATFORM_FEE_BPS, MAX_HOST_FEE_BPS, ROLL_MAX, ROLL_EXP } from "@pulled/
 import { GITHUB_G3, GITHUB_G4, GITHUB_G3_DATA, GITHUB_G4_DATA, GITHUB_LAW, programLink } from "./links";
 import g6 from "../../research/data/G6-slot-samples-summary.json";
 import orao from "../../research/data/orao-summary.json";
-import { GITHUB_G2, GITHUB_G6, GITHUB_G6_DATA, GITHUB_ORAO_DATA } from "./links";
+import { GITHUB_G2, GITHUB_G6, GITHUB_G6_DATA, GITHUB_ORAO_DATA, EXPLORER_ADDRESS } from "./links";
+import { MARKET_ENV, VRF_TIMEOUT_SLOTS_ENV, WINDOW_SLOTS_ENV } from "./data/cluster";
 
 export interface Measured<T> {
   value: T;
@@ -225,11 +226,35 @@ export function slotMs(): Measured<SlotTime> {
   };
 }
 
-/** G6 §6 recommendation for a ~20 s window: 92 slots. */
+/**
+ * G6 §6 recommendation for a ~20 s window: 92 slots. The demo's round
+ * length only: a page that states the round length uses roundSlots(), and a
+ * mainnet build stops on any other call (next.config.ts, launch gate).
+ */
 export function windowSlots(): Measured<number> {
   const s = slotMs();
   const target = 20_000;
   return { value: Math.round(target / s.value.ms), measuredAt: s.measuredAt, source: "G6 recommended window_slots for ~20 s", href: GITHUB_G6 };
+}
+
+/** Where a market setting can be read on chain: the market's explorer page, else the research note. */
+const marketHref = (fallback: string) => (MARKET_ENV ? EXPLORER_ADDRESS.replace("{address}", MARKET_ENV) : fallback);
+
+/**
+ * The round length the pages state: the deployed market's window_slots,
+ * given to the build as NEXT_PUBLIC_LADLE_WINDOW_SLOTS (written by
+ * scripts/mainnet-up.ps1 and devnet-up.ps1 from config/deployments; a mainnet
+ * build requires it), else the demo's G6 value (~20 s, windowSlots()).
+ */
+export function roundSlots(): Measured<number> {
+  if (WINDOW_SLOTS_ENV == null) return windowSlots();
+  return { value: WINDOW_SLOTS_ENV, measuredAt: slotMs().measuredAt, source: "the market's window_slots", href: marketHref(GITHUB_G6) };
+}
+
+/** The refund delay the pages state: the market's vrf_timeout_slots (NEXT_PUBLIC_LADLE_VRF_TIMEOUT_SLOTS), else G2's recommendation. */
+export function roundTimeoutSlots(): Measured<number> {
+  if (VRF_TIMEOUT_SLOTS_ENV == null) return vrfTimeoutSlots();
+  return { value: VRF_TIMEOUT_SLOTS_ENV, measuredAt: orao.generated_at, source: "the market's vrf_timeout_slots", href: marketHref(GITHUB_G2) };
 }
 
 /* ---------------------------- G2: reveal latency ---------------------------- */
@@ -270,7 +295,7 @@ export function revealLatency(): Measured<Latency> {
   };
 }
 
-/** Slots after seal without a seed before anyone can trigger the refund (G2 §9: vrf_timeout_slots ≈ 900). */
+/** Slots after seal without a seed before anyone can trigger the refund (G2 §9: vrf_timeout_slots ≈ 900). Pages state roundTimeoutSlots(). */
 export function vrfTimeoutSlots(): Measured<number> {
   const m = /vrf_timeout_slots[^0-9]{0,12}(\d{3,4})/.exec(G2_TIMEOUT_SENTENCE);
   return { value: m ? Number(m[1]) : NaN, measuredAt: orao.generated_at, source: "G2 recommendation, vrf_timeout_slots", href: GITHUB_G2 };

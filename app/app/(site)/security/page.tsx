@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getDict } from "../../../i18n/server";
 import { formatDate, formatInt, formatPct } from "../../../lib/format";
-import { g3SmallStats, maxHostFeeBps, platformFeeBps, revealLatency, slotMs, vrfTimeoutSlots, windowSlots } from "../../../lib/measurements";
+import { g3SmallStats, maxHostFeeBps, platformFeeBps, revealLatency, roundSlots, roundTimeoutSlots, slotMs } from "../../../lib/measurements";
 import { categoryChangePct, g5PropertyWindows, hostTests, playersLosingPct, keeperBountyPct, programInstructions, SECURITY_HREF, timelockHours } from "../../../lib/project";
 import { GITHUB_MECHANICS, GITHUB_PROGRAM_README, GITHUB_PROPS, GITHUB_RISKS, GITHUB_SECURITY } from "../../../lib/links";
 import { buildGates } from "../../../components/project/gates";
@@ -31,7 +31,8 @@ export default async function SecurityPage() {
   const { t, locale } = await getDict();
   const fee = platformFeeBps();
   const host = maxHostFeeBps();
-  const timeout = vrfTimeoutSlots();
+  // the market's settings (NEXT_PUBLIC_LADLE_*_SLOTS; the demo's ~20 s rounds without them): a mainnet round is not the demo's
+  const timeout = roundTimeoutSlots();
   const slot = slotMs();
   const lat = revealLatency();
   const tl = timelockHours();
@@ -42,7 +43,7 @@ export default async function SecurityPage() {
   const small = g3SmallStats("power");
   const change = categoryChangePct();
   const losing = playersLosingPct();
-  const slots = windowSlots();
+  const slots = roundSlots();
   const windowS = Math.round((slots.value * slot.value.ms) / 1000);
   const timeoutMin = ((timeout.value * slot.value.ms) / 60000).toFixed(1);
   const { gates, verdictText } = buildGates(t, locale);
@@ -86,12 +87,16 @@ export default async function SecurityPage() {
     { id: "authority", label: t("about.authority") }, { id: "checks", label: t("checks.title") }, { id: "risks", label: t("risks.title") },
     { id: "architecture", label: t("arch.title") }, { id: "limits", label: t("sec.limTitle") },
   ];
-  // laid out in short lines (36 columns at most), so it reads whole in the well on a phone as on a desktop
+  // laid out in short lines (36 columns at most), so it reads whole in the well on a phone as on a desktop;
+  // the domain tags are the program's (programs/ladle/src/state.rs VRF_SEED_DOMAIN, VRF_REQUEST_DOMAIN)
   const formula = [
-    `vrf_seed = sha256("pulled:vrf:v1"`,
+    `seal = sha256("ladle:vrf:v1"`,
     `    ‖ window ‖ close_slot`,
     `    ‖ entry_count`,
     `    ‖ entries_commitment)`,
+    `vrf_seed = sha256("ladle:vrf:req"`,
+    `    ‖ seal ‖ salt)`,
+    `seed = ORAO's answer to vrf_seed`,
     `roll_i = sha256(seed ‖ owner_i`,
     `    ‖ index_i)`,
     `  → floor(10001 · u³)`,
@@ -200,6 +205,7 @@ export default async function SecurityPage() {
               <><b>{t("about.optB")}</b> {t("sec.optBWhy")}</>,
             ]} />
             <p className="ui">{t("sec.noThird")}</p>
+            <p className="ui" id="closing">{t("sec.closing")}</p>
           </div>
         </div>
       </Sec>

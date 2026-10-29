@@ -8,6 +8,7 @@ import { ProfileProvider } from "../components/hall/profile/ProfileProvider";
 import { ProfileFlow } from "../components/hall/profile/ProfileFlow";
 import { ConservedBar } from "../components/hall/hud/ConservedBar";
 import { DemoTag } from "../components/ui/DemoTag";
+import { ClosingNotice } from "../components/live/ClosingNotice";
 import { InlineScript } from "../components/InlineScript";
 import "./globals.css";
 import "./hall.css";
@@ -60,6 +61,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               {children}
               <ProfileFlow />
               <DemoTag />
+              <ClosingNotice />
               <ConservedBar />
             </ProfileProvider>
           </WalletProviders>

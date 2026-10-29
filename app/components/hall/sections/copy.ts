@@ -139,7 +139,7 @@ export const P = {
     solTitle: "How Ladle runs on Solana.",
     rows: [
       { t: "The program", b: "One Solana program holds the round: it takes entries at one price, seals at slot 92, asks ORAO VRF for a seed, and splits the round's single buy on the LADLE curve into scoops. The sum of the scoops is exactly the buy." },
-      { t: "The seed", b: "ORAO VRF delivers one seed per round with a proof. Nobody picks it, us included. Every roll is derived from that seed, the entry's owner and its index, so any round can be recomputed in a browser." },
+      { t: "The seed", b: "ORAO VRF delivers one seed per round with a proof. The keeper requests it in the transaction that seals the round, and the first request to land fixes it; only ORAO's signers, colluding with whoever sends that request, could try salts for a better draw. Every roll is derived from that seed, the entry's owner and its index, so any round can be recomputed in a browser." },
       { t: "The curve", b: "Each round makes one buy on the LADLE bonding curve, so the price steps up; each sell back steps it down, at the curve price, with 0 fee." },
       { t: "The keepers", b: "Sealing, requesting the seed and settling are permissionless steps. Anyone can run them for a small bounty written in the program." },
       { t: "Today", b: "This site runs on demo data in your browser while the program is tested. It is not deployed or audited yet; the status page says what is done and what is not." },

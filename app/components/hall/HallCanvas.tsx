@@ -5,14 +5,22 @@
  * layout and kept while navigating between / and /play (each route is a
  * camera shot, never a remount). Picks the quality tier, mirrors the live
  * window into the scene's bus, and falls back to the poster when WebGL is
- * missing. A CSS vignette sits over the canvas; the veil above it is dimmed
- * by the home's scroll tour (v21) for its last stop; the DOM name tags are
- * projected into #hall-tags.
+ * missing (perf v21.4: or the GPU is a software one, quality.ts). A CSS
+ * vignette sits over the canvas; the veil above it is the scroll tour's (a
+ * cut behind it on a long jump, its dip under reduced motion: TourDriver;
+ * never the scroll's speed); the DOM name tags are projected into #hall-tags.
+ *
+ * v21.3: nothing here re-renders on a scroll or a live tick. The scroll state
+ * (0 at the top, 1 past 40 % of the viewport, 2 past two heights) comes from
+ * the hall's one scroll reader (tour/scroll.ts) into the store and onto the
+ * stage's data-scroll directly; the live window is mirrored into the scene's
+ * bus by a subscription, not a render. A re-render here used to re-render
+ * the whole 3D tree and reset its pixel ratio.
  */
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { useLive } from "../live/LiveProvider";
+import { useEffect, useRef, useState } from "react";
+import { useLiveEffect } from "../live/LiveProvider";
 import { useProfile } from "./profile/ProfileProvider";
 import { hall, hallBus, useHall, type Quality } from "./store";
 import { stage } from "./stage";
@@ -20,30 +28,16 @@ import { scarfHex } from "../../lib/profile";
 import { TagsList } from "./Tags";
 import { usePresence } from "../../lib/chat";
 import { getDataSource } from "../../lib/data";
+import { onScrollY, scrollState } from "./tour/scroll";
+import { detectQuality, preloadQuality } from "./quality";
 
 const HallWorld = dynamic(() => import("./HallWorld"), { ssr: false });
 
-export function detectQuality(): Quality {
-  try {
-    const q = new URLSearchParams(window.location.search).get("q");
-    if (q === "high" || q === "mid" || q === "low" || q === "none") return q;
-  } catch { /* no URL */ }
-  try {
-    const c = document.createElement("canvas");
-    const gl = (c.getContext("webgl2") || c.getContext("webgl")) as WebGLRenderingContext | null;
-    if (!gl) return "none";
-    const ext = gl.getExtension("WEBGL_debug_renderer_info");
-    const r = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : "";
-    gl.getExtension("WEBGL_lose_context")?.loseContext();
-    if (/swiftshader|llvmpipe|software|basic render|microsoft basic/i.test(r)) return "low";
-    const phone = window.innerWidth < 768 || (navigator.hardwareConcurrency ?? 8) <= 4;
-    return phone ? "mid" : "high";
-  } catch { return "none"; }
-}
+// fix:1 (T7): the GPU is asked from this module's load (beside the hydration), not from the effect below (after it)
+preloadQuality();
 
 /** Mirrors the live window and the viewer's identity into the scene. */
 function HallBridge() {
-  const { w } = useLive();
   const { profile } = useProfile();
   useEffect(() => {
     hallBus.myName = profile?.nickname ?? "you";
@@ -51,12 +45,13 @@ function HallBridge() {
     stage.sim.myColor = profile ? scarfHex(profile.scarf) : null;
     hall.set({ me: profile ? { pubkey: profile.pubkey, nickname: profile.nickname, species: profile.species, scarf: scarfHex(profile.scarf), genesis: profile.genesis } : null });
   }, [profile]);
-  useEffect(() => {
+  // every live window, into the scene's bus (no render)
+  useLiveEffect((w) => {
     if (!w) return;
     hallBus.w = w;
     hallBus.version++;
     hall.markLoaded("data");
-  }, [w]);
+  });
   // dev captures enter a round through the data source (screenshots/v21/hall/shoot-you.mjs)
   useEffect(() => { if (process.env.NODE_ENV !== "production") (window as unknown as { __ds?: unknown }).__ds = getDataSource(); }, []);
   // the room's spectators (lib/chat), seated in the stands by Cast
@@ -76,40 +71,46 @@ export function HallCanvas({ compact = false }: { compact?: boolean }) {
   // the cradle and the first characters), then cross-fades the canvas in, never a bare cage over a grey floor
   const dressed = useHall((s) => s.loaded.env && s.loaded.cradle && s.loaded.cast);
   const glReady = glReady0 && (!compact || dressed);
-  const scroll = useHall((s) => s.scroll);
   const visibleH = useHall((s) => s.visibleH);
   const path = usePathname();
   const route = compact ? "embed" : path?.startsWith("/play") ? "play" : "home";
+  const stageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let quality = detectQuality();
-    if (compact && quality === "high") quality = "mid";
-    if (compact && window.innerWidth < 360) quality = "none";
+    let alive = true;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     stage.reduced = reduced;
-    hall.set({ quality, reduced });
-    setQ(quality);
+    hall.set({ reduced });
     setPhone(window.innerWidth < 768);
-    if (quality === "none") { hall.markLoaded("env"); hall.markLoaded("shell"); hall.markLoaded("cradle"); hall.markLoaded("cast"); }
+    // perf v21.4 (F5): the GPU is asked in a worker (quality.ts): a software renderer gets the poster, never a second context
+    void detectQuality().then((q0) => {
+      if (!alive) return;
+      if (process.env.NODE_ENV !== "production") performance.mark("hall:quality");
+      let quality = q0;
+      if (compact && quality === "high") quality = "mid";
+      if (compact && window.innerWidth < 360) quality = "none";
+      hall.set({ quality });
+      setQ(quality);
+      if (quality === "none") { hall.markLoaded("env"); hall.markLoaded("shell"); hall.markLoaded("cradle"); hall.markLoaded("cast"); }
+    });
     const onResize = () => setPhone(window.innerWidth < 768);
     window.addEventListener("resize", onResize);
-    // the scroll state: 1 below 40 % of the viewport, 2 past two viewport heights (read once per frame, never inside the event)
-    let raf = 0;
-    const read = () => {
-      raf = 0;
-      const y = window.scrollY, h = window.innerHeight;
-      hall.set({ scroll: y > h * 2 ? 2 : y > h * 0.4 ? 1 : 0 });
-    };
-    const onScroll = () => { if (!raf) raf = requestAnimationFrame(read); };
-    read();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => { window.removeEventListener("resize", onResize); window.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
+    // the scroll state: 1 below 40 % of the viewport, 2 past two viewport heights (from the one scroll reader: no layout
+    // read, no React render; the stage's data-scroll is written here, the store only changes at a threshold)
+    const off = onScrollY((y) => {
+      const h = scrollState.vh || 800;
+      const v = y > h * 2 ? 2 : y > h * 0.4 ? 1 : 0;
+      const el = stageRef.current;
+      if (el && el.dataset.scroll !== String(v)) el.dataset.scroll = String(v);
+      hall.set({ scroll: v });
+    });
+    return () => { alive = false; window.removeEventListener("resize", onResize); off(); };
   }, []);
 
   return (
     <>
     <TagsList />
-    <div className={`hall-stage ${compact ? "compact" : ""}`} data-scroll={scroll} data-route={route} aria-hidden="true">
+    <div ref={stageRef} className={`hall-stage ${compact ? "compact" : ""}`} data-scroll="0" data-route={route} aria-hidden="true">
       <HallBridge />
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img className={`hall-poster ${glReady && q !== "none" ? "gone" : ""}`} src={phone ? "/hall-poster-mobile.webp" : "/hall-poster.webp"} alt="" decoding="async" style={phone && visibleH ? { height: visibleH, objectPosition: "50% 40%" } : undefined} />

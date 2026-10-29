@@ -44,6 +44,7 @@ import { tourBus } from "./tour";
 import { sol2, solShort } from "./fmt";
 import { dictionary, format } from "../../i18n";
 import { DATA_SOURCE } from "../../lib/data";
+import { scrollingNow } from "./tour/scroll";
 
 type Kind = "entry" | "me" | "watch";
 
@@ -117,9 +118,11 @@ function devWatchers(): Presence[] | null {
 const WATCH_CAP: Record<Quality, number> = { high: 160, mid: 80, low: 36, none: 0 };
 /** v21 §8.16: you plus 14 others on /play (12 in all on the home), you plus the 2 nearest on phones; never more than 15 tag nodes. */
 const TAGS_PLAY = 15, TAGS_HOME = 12, TAGS_PHONE = 3, TAG_NODES = 15, TAG_NODES_PHONE = 4;
+/** fix:1 (T3): a smoothed frame interval past this (under 40 fps) places the tags every other frame */
+const TAGS_HALF_MS = 25;
 
 export function Cast({ quality, phone, compact = false }: { quality: Quality; phone: boolean; compact?: boolean }) {
-  const { camera, size, scene } = useThree();
+  const { camera, size, scene, gl } = useThree();
   const chars = useRef(new Map<string, Char>());
   const mine = useRef<Char | null>(null);
   const firstLoaded = useRef(0);
@@ -128,6 +131,9 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
   const windowId = useRef("");
   const lastSeating = useRef("");
   const frame = useRef(0);
+  /** fix:1 (T3): the frame interval, smoothed (ms): past TAGS_HALF_MS the tags are placed every other frame */
+  const interval = useRef(16);
+  const frameAt = useRef(0);
   const pointer = useRef({ x: -1e4, y: -1e4, at: 0 });
   const dev = useMemo(() => devWatchers(), []);
   const nodeCap = phone ? TAG_NODES_PHONE : TAG_NODES;
@@ -139,19 +145,39 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
     const stageB = new CrowdBatch(1500, mat, { shadows: quality === "high", cull: false });
     const standsB = new CrowdBatch(2600, mat, { shadows: false, cull: true });
     const blobs = blobShadows(400);
-    return { mat, stageB, standsB, blobs };
+    return { mat, stageB, standsB, blobs, held: 0 };
   }, [quality]);
 
   useEffect(() => {
     scene.add(crowd.stageB.mesh, crowd.standsB.mesh, crowd.blobs);
+    crowd.held++;
     return () => {
       scene.remove(crowd.stageB.mesh, crowd.standsB.mesh, crowd.blobs);
-      crowd.stageB.dispose(); crowd.standsB.dispose(); crowd.mat.dispose();
-      crowd.blobs.geometry.dispose(); (crowd.blobs.material as THREE.MeshBasicMaterial).map?.dispose(); (crowd.blobs.material as THREE.Material).dispose();
       chars.current.clear(); mine.current = null;
       lastVersion.current = -1; lastPresence.current = -1; windowId.current = "";
+      // fix:1: the batches are disposed a task after the cleanup, unless the effect has taken them back meanwhile. In
+      // development, Strict Mode runs this effect, its cleanup and the effect again on the same memo for a component the
+      // canvas mounts after its first commit: disposed at once, they were added back disposed and every pet's bake failed
+      // in BatchedMesh.addInstance (the crowd had to mount in the canvas's first step, the heaviest)
+      crowd.held--;
+      setTimeout(() => {
+        if (crowd.held > 0) return;
+        crowd.stageB.dispose(); crowd.standsB.dispose();
+        if (crowd.mat.map?.userData.stub) crowd.mat.map.dispose();
+        crowd.mat.dispose();
+        crowd.blobs.geometry.dispose(); (crowd.blobs.material as THREE.MeshBasicMaterial).map?.dispose(); (crowd.blobs.material as THREE.Material).dispose();
+      }, 0);
     };
   }, [crowd, scene]);
+
+  // perf v21.4: the species loaded and baked from the mount, under the loader's still. The frame loop now waits for the
+  // WarmGate, so the first useFrame is the gate's priming frame: loaded from there, the cast came in after the loader had
+  // gone live (the first live frame an empty room against the still's full one). The compact embed only needs its round's
+  useEffect(() => {
+    const s = hall.get(), w = hallBus.w;
+    const want = compact ? new Set<Species>([...(w ? w.entries.map((e) => speciesOf(e.owner)) : []), ...(s.me ? [s.me.species] : [])]) : SPECIES;
+    for (const sp of want) void bakeSpecies(sp).catch(() => {});
+  }, [compact]);
 
   // a round with fewer than three players still finishes the loader's step
   useEffect(() => {
@@ -175,7 +201,9 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
     c.batch = batch;
     void bakeSpecies(c.species).then((b) => {
       if (c.disposed) return;
-      if (!crowd.mat.map && b.map) { crowd.mat.map = b.map; crowd.mat.needsUpdate = true; }
+      // perf v21.4 (F3): the colormap takes the stand-in's place (both sRGB maps on uv 0: the same program, no needsUpdate),
+      // uploaded here rather than in the frame that first draws it
+      if (crowd.mat.map?.userData.stub && b.map) { const old = crowd.mat.map; gl.initTexture(b.map); crowd.mat.map = b.map; old.dispose(); }
       c.bake = b;
       c.fig = batch.add(b, c.color);
       ready?.();
@@ -223,6 +251,8 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
   useFrame(() => {
     const now = performance.now();
     frame.current++;
+    if (frameAt.current) interval.current += (Math.min(250, now - frameAt.current) - interval.current) * 0.2;
+    frameAt.current = now;
     const s = hall.get();
     const w = hallBus.w;
     const L = layout();
@@ -295,7 +325,12 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
         c.target.set(seat.x, seat.y, seat.z);
         c.yaw = faceCentre(seat.x, seat.z);
         c.size = c.sizeFrom = c.sizeTo = sizeOfSeat(seat, n);
-        if (e.mine && mine.current) {
+        if (!s.warm) {
+          // perf v21.4: the room is still being warmed under the loader's still (the WarmGate's priming frames): the round's
+          // players are in their seats already, as in the still (they rise, or you hop, only once the room is live)
+          c.from.copy(c.target);
+          if (e.mine && mine.current) { drop(mine.current); mine.current = null; }
+        } else if (e.mine && mine.current) {
           // you: hop from the gallery onto your seat (resizing from the gallery's size)
           c.from.copy(mine.current.pos);
           c.size = c.sizeFrom = mine.current.size;
@@ -308,7 +343,8 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
           c.moveAt = now; c.moveMs = 300;
         }
         c.pos.copy(c.from);
-        c.bornAt = now;
+        // (seated under the still: not a new arrival, whose tag would take a crowd's budget for 5 s)
+        c.bornAt = s.warm ? now : now - 5000;
         c.slot = i & 1;
         chars.current.set(key, c);
         spawn(c, seat.stands ? crowd.standsB : crowd.stageB, seat.stands ? undefined : loadedOne);
@@ -341,10 +377,11 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
         c.size = c.sizeFrom = c.sizeTo = STANDS_S;
         c.target.set(seat.x, seat.y, seat.z);
         c.yaw = faceCentre(seat.x, seat.z);
-        c.from.set(seat.x, seat.y - 0.35, seat.z);
+        // (seated already while the room is warmed under the loader's still, as above)
+        if (s.warm) { c.from.set(seat.x, seat.y - 0.35, seat.z); c.moveAt = now; c.moveMs = 350; }
+        else c.from.copy(c.target);
         c.pos.copy(c.from);
-        c.moveAt = now; c.moveMs = 350;
-        c.bornAt = now;
+        c.bornAt = s.warm ? now : now - 5000;
         c.slot = k & 1;
         chars.current.set(key, c);
         spawn(c, crowd.standsB);
@@ -445,14 +482,18 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
     } else stage.owners.clear();
     for (const i of stage.hands.keys()) if (!handSeen.has(i)) stage.hands.delete(i);
 
-    placeTags(now, w, revealing, t);
+    // fix:1 (T3): under 40 fps the tags are placed every other frame (their style writes cost the frame a style pass:
+    // 6 to 13 ms of a 47 to 56 ms frame at 4x CPU); the frame loop's own work stays every frame
+    if (interval.current <= TAGS_HALF_MS || (frame.current & 1) === 0) placeTags(now, w, revealing, t);
   });
 
   // the HUD's panes (chat, cards, dock): a tag never sits under one (you and the hovered one excepted); read every 20 frames
   const panes = useRef<Array<{ x0: number; x1: number; y0: number; y1: number }>>([]);
   const panesAt = useRef(-99);
   const readPanes = () => {
-    if (frame.current - panesAt.current < 20) return panes.current;
+    // v21.3: never while the page scrolls (the scroll event has just written styles: a rect read here forces the whole
+    // style and layout pass inside the frame loop); the last rects hold for those frames, the tags leave with the scroll
+    if (frame.current - panesAt.current < 20 || (scrollingNow(120) && panesAt.current > -99)) return panes.current;
     panesAt.current = frame.current;
     const out: typeof panes.current = [];
     document.querySelectorAll(".hud-pane").forEach((el) => {
@@ -604,9 +645,10 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
         const px = Math.round(Math.max(4, Math.min(W - wpx - 4, ((v.x + 1) / 2) * W - wpx / 2)));
         const py = Math.round(Math.max(4, Math.min(H - TH - 8, ((1 - v.y) / 2) * H - TH - 4)));
         boxes.push({ x0: px, x1: px + wpx, y0: py, y1: py + TH });
-        el.style.transform = `translate3d(${px}px, ${py}px, 0)`;
-        el.style.opacity = "1";
-        el.style.visibility = "visible";
+        const ptf = `translate3d(${px}px, ${py}px, 0px)`;
+        if (el.style.transform !== ptf) el.style.transform = ptf;
+        if (el.style.opacity !== "1") el.style.opacity = "1";
+        if (el.style.visibility !== "visible") el.style.visibility = "visible";
       }
     }
     for (const { c, x, y } of list) {
@@ -646,13 +688,15 @@ export function Cast({ quality, phone, compact = false }: { quality: Quality; ph
       el.classList.toggle("you", you);
       if (el.dataset.scarf !== c.color) { el.dataset.scarf = c.color; el.style.setProperty("--tag-scarf", c.color); }
       el.classList.toggle("genesis", you && !!s.me?.genesis);
-      el.classList.remove("stands-pill");
+      if (el.classList.contains("stands-pill")) el.classList.remove("stands-pill");
       boxes.push({ x0, x1: x0 + wpx, y0: y1 - TH, y1 });
-      const tf = `translate3d(${Math.round(x0)}px, ${Math.round(y1 - TH)}px, 0)`;
+      // (0px, not 0: the browser reads the transform back as 0px, and the comparison below never matched)
+      const tf = `translate3d(${Math.round(x0)}px, ${Math.round(y1 - TH)}px, 0px)`;
       if (el.style.transform !== tf) el.style.transform = tf;
-      const rise = Math.min(1, (now - Math.max(c.bornAt, Number(el.dataset.born) || 0)) / 160);
-      el.style.opacity = String(rise);
-      el.style.visibility = "visible";
+      // (fix:1: a style written only when it changes: an unchanged tag costs the frame no style pass)
+      const rise = String(Math.min(1, (now - Math.max(c.bornAt, Number(el.dataset.born) || 0)) / 160));
+      if (el.style.opacity !== rise) el.style.opacity = rise;
+      if (el.style.visibility !== "visible") el.style.visibility = "visible";
     }
     // tags nobody holds this frame go back to the pool
     for (const [key, el] of tagByKey.current) {

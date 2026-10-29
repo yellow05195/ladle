@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BRAND } from "../../config/brand";
 import { getDict } from "../i18n/server";
 import { DATA_SOURCE } from "../lib/data";
+import { MAINNET } from "../lib/data/cluster";
 import { Arr } from "./ui/house";
 
 /**
@@ -36,7 +37,8 @@ export async function SiteFooter() {
         </nav>
         <div className="meta-row">
           <a className="act" href={BRAND.xUrl} target="_blank" rel="noreferrer">{t("h.foot.x", { x: BRAND.xHandle })}<Arr ch="↗" /></a>
-          <span className="fine">{DATA_SOURCE === "demo" ? t("h.foot.demo") : t("h.foot.devnet")}</span>
+          {/* the source line follows the build: demo, devnet (test SOL) or mainnet (real SOL) */}
+          <span className="fine">{DATA_SOURCE === "demo" ? t("h.foot.demo") : MAINNET ? t("h.foot.mainnet") : t("h.foot.devnet")}</span>
         </div>
       </div>
     </footer>

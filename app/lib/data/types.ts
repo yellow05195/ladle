@@ -1,11 +1,55 @@
 /**
  * Data layer contract. Two implementations: `mock.ts` (deterministic demo,
- * settled with the real sdk law) and `chain.ts` (Solana, not wired yet).
+ * settled with the real sdk law) and `chain.ts` (Solana, through the sdk).
  * Every amount is bigint lamports; every share is bigint base units of the token.
  */
 
 export type Phase = "open" | "sealed" | "seeded" | "settled" | "sold";
 export type Source = "demo" | "chain";
+
+/**
+ * Chain only: why no round takes entries right now (absent or null when one
+ * does, and always in the demo). The HUD says it in plain words and disables
+ * entering; the round in focus keeps its own phase.
+ */
+export interface Halt {
+  /**
+   * "none": the market has not opened a round yet; "closing": the open
+   * round's slots ran out and it is not sealed yet (the program refuses
+   * entries from its close slot); "between": the last round no longer takes
+   * entries and the next one is not open; "offline": this page's RPC reads
+   * fail, so what it shows is stale (not the keeper's doing); "paused": the
+   * program opens no new round while eight wait to settle behind one that
+   * has not finished (`round`: that one).
+   */
+  kind: "none" | "closing" | "between" | "offline" | "paused";
+  /** The round that stopped taking entries; null for "none" and "offline". */
+  round: string | null;
+  /** Slots since the keeper should have moved on (0 for "none"; "offline": slots since the last answer). */
+  late: number;
+  /** Later than the keeper's normal delay: the HUD says the keeper is late. */
+  stalled: boolean;
+}
+
+/**
+ * Chain only: a round that will not be drawn (its randomness never came) where the viewer's stake waits in the round:
+ * the viewer takes it back (`DataSource.refund`), the stake and the entry's rent arrive as SOL. The keeper refunds it
+ * only when the wallet already has a SOL token account.
+ */
+export interface StakeBack {
+  id: string;
+  /** The stake, lamports, in full. */
+  amount: bigint;
+}
+
+/** Chain only: a settled round where the viewer's scoop still sits in the program (to sell back; v25: it never goes to a wallet). */
+export interface ScoopLeft {
+  id: string;
+  /** LADLE base units not yet taken or sold. */
+  tokens: bigint;
+  /** What the curve pays for them right now, lamports (0 fee). */
+  sellBack: bigint;
+}
 
 export interface EntryView {
   /** Position in the window (u32). Rolls are derived from seed || owner || index. */
@@ -77,6 +121,23 @@ export interface LiveWindow {
   soldFor: bigint | null;
   /** The other window in flight, if any: the open one while this one waits, or the waiting one while this one is open. */
   sibling: SiblingView | null;
+  /** Chain only: why no round takes entries right now (see Halt). */
+  halt?: Halt | null;
+  /** Chain only: the largest entry the program accepts in the open round right now (cap, floor and maximum entry). */
+  maxEntry?: bigint;
+  /** Chain only, with a wallet: the viewer's scoops still in the program, newest first (this round's included). */
+  scoopsLeft?: ScoopLeft[];
+  /** Chain only, with a wallet: the viewer's stakes in rounds that will not be drawn, newest first (StakeBack). */
+  stakesBack?: StakeBack[];
+  /** Chain only: what the viewer did with their scoops from this page, by round id (the entry closes in the same transaction). */
+  outcomes?: Record<string, ScoopOutcome>;
+}
+
+/** Chain only: a scoop the viewer took to their wallet, or sold back (`sol`: what the curve paid). */
+export interface ScoopOutcome {
+  kind: "taken" | "sold";
+  tokens: bigint;
+  sol: bigint | null;
 }
 
 export interface WindowView {
@@ -125,14 +186,19 @@ export interface PastDistribution {
 
 export interface DataSource {
   getLiveWindow(): Promise<LiveWindow>;
-  subscribe(cb: (w: LiveWindow) => void): () => void;
+  /** `onError`: the source cannot read rounds at all (configuration, a missing market, the RPC down before the first snapshot). */
+  subscribe(cb: (w: LiveWindow) => void, onError?: (e: Error) => void): () => void;
   getWindow(id: string): Promise<WindowView | null>;
   listRecentWindows(): Promise<WindowView[]>;
   getPastDistribution(): Promise<PastDistribution>;
-  /** Demo only: place the viewer's entry in the open window. Absent on read-only sources. */
+  /** Place the viewer's entry in the open window. Absent on read-only sources. */
   enter?(amount: bigint): Promise<void>;
-  /** Demo only: sell the viewer's share back at the curve price. */
-  sellBack?(): Promise<void>;
+  /** Sell the viewer's share of round `id` (default: the round in focus) back at the curve price. */
+  sellBack?(id?: string): Promise<void>;
+  /** Chain: take the viewer's stake of round `id` back, from a round that will not be drawn (StakeBack). */
+  refund?(id: string): Promise<void>;
+  /** The viewer closed their result: the source follows the open round again. */
+  release?(): void;
 }
 
 /* ------------------------------ v20: history, books, Genesis ------------------------------ */

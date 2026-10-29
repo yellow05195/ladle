@@ -19,6 +19,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
 import { glossBall } from "../drum/materials";
+import { buildAhead } from "./assets";
 import { LADLE_BOWL_Y, LADLE_H, LADLE_PARK_Y, LADLE_S, LADLE_X, LADLE_Z, MARK_O, ladlePose, revealTime, stage, type LadlePose } from "./stage";
 
 export { LADLE_H, LADLE_S };
@@ -53,30 +54,44 @@ function brushedNormal(): THREE.CanvasTexture | null {
   return t;
 }
 
+/**
+ * The mark's body, in steps (the SVG's shapes, the extrusion, then the flip and the normals): perf v21.4, built ahead in
+ * idle slots from this module's load (assets.ts buildAhead), so the mount step that adds the ladle only takes it.
+ */
+function* bodySteps(): Generator<void, THREE.ExtrudeGeometry> {
+  const data = new SVGLoader().parse(MARK_SVG);
+  const shapes = data.paths.flatMap((p) => SVGLoader.createShapes(p));
+  yield;
+  // a real body: 10 cm of core plus a 2.2 cm rounded bevel each side (12 to 14 cm through), the bevel deep enough to catch a highlight
+  const depth = 0.1 / LADLE_S, bevel = 0.022 / LADLE_S;
+  const g = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: 0.016 / LADLE_S, bevelSegments: 6, curveSegments: 48 });
+  yield;
+  // mark units → metres, y up, origin at the ball's centre, centred in depth
+  g.translate(-MARK_O.x, -MARK_O.y, -depth / 2);
+  g.scale(LADLE_S, -LADLE_S, LADLE_S);
+  // the y flip turned the faces inside out: flip them back
+  const idx = g.index;
+  if (idx) { const a = idx.array as Uint16Array | Uint32Array; for (let i = 0; i < a.length; i += 3) { const t = a[i]!; a[i] = a[i + 2]!; a[i + 2] = t; } idx.needsUpdate = true; }
+  else {
+    const pos = g.attributes.position!;
+    for (let i = 0; i < pos.count; i += 3) {
+      for (let c = 0; c < 3; c++) { const t = pos.getComponent(i, c); pos.setComponent(i, c, pos.getComponent(i + 2, c)); pos.setComponent(i + 2, c, t); }
+    }
+    pos.needsUpdate = true;
+  }
+  g.computeVertexNormals();
+  return g;
+}
+const takeBody = buildAhead(bodySteps);
+/** resolves once the body is built (its last steps then go one per task): HallWorld mounts the ladle's step after it */
+export const ladleReady = takeBody.ready;
+
 export function Ladle({ onReady }: { onReady?: () => void }) {
   const group = useRef<THREE.Group>(null);
   const ball = useRef<THREE.Mesh>(null);
   const rod = useRef<THREE.Mesh>(null);
   const { geo, mat, ballMat, nrm } = useMemo(() => {
-    const data = new SVGLoader().parse(MARK_SVG);
-    const shapes = data.paths.flatMap((p) => SVGLoader.createShapes(p));
-    // a real body: 10 cm of core plus a 2.2 cm rounded bevel each side (12 to 14 cm through), the bevel deep enough to catch a highlight
-    const depth = 0.1 / LADLE_S, bevel = 0.022 / LADLE_S;
-    const g = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: 0.016 / LADLE_S, bevelSegments: 6, curveSegments: 48 });
-    // mark units → metres, y up, origin at the ball's centre, centred in depth
-    g.translate(-MARK_O.x, -MARK_O.y, -depth / 2);
-    g.scale(LADLE_S, -LADLE_S, LADLE_S);
-    // the y flip turned the faces inside out: flip them back
-    const idx = g.index;
-    if (idx) { const a = idx.array as Uint16Array | Uint32Array; for (let i = 0; i < a.length; i += 3) { const t = a[i]!; a[i] = a[i + 2]!; a[i + 2] = t; } idx.needsUpdate = true; }
-    else {
-      const pos = g.attributes.position!;
-      for (let i = 0; i < pos.count; i += 3) {
-        for (let c = 0; c < 3; c++) { const t = pos.getComponent(i, c); pos.setComponent(i, c, pos.getComponent(i + 2, c)); pos.setComponent(i + 2, c, t); }
-      }
-      pos.needsUpdate = true;
-    }
-    g.computeVertexNormals();
+    const g = takeBody();
     const n = brushedNormal();
     // the cradle's polished brass (DrumAssembly tints the cradle's metal #E8C48A), on every face: no flat yellow, no dark sides
     const m = new THREE.MeshPhysicalMaterial({ color: "#CC9A50", metalness: 1, roughness: 0.27, envMapIntensity: 1.25, normalMap: n, normalScale: new THREE.Vector2(0.5, 0.5), clearcoat: 0.35, clearcoatRoughness: 0.18 });

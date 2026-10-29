@@ -2,7 +2,8 @@
  * Ladle, v21.1: the home's scroll tour (§7.17; layout from v21 §15). Below
  * the first screen the page is the live hall: the canvas stays fixed behind
  * every chapter, nothing opaque covers it, and each chapter's text scrolls
- * over it on a side scrim fixed to the viewport (never a band or a card).
+ * over it on its own feathered ground (fix:scroll:r3-2; it was a side scrim
+ * fixed to the viewport), never a band or a card.
  * Desktop (1024 px and wider, landscape): the caption beside the subject,
  * alternating sides. Portrait: the subject above, the caption below.
  * A caption: the label ("1 of 8 · How a round plays"), Display L, the
@@ -12,6 +13,15 @@
 
 /* ------------------------------ the hall is the page ------------------------------ */
 
+/*
+ * v21.3: on the tour the hall is as tall as the largest viewport, so a phone's
+ * toolbar showing or hiding never resizes the canvas (a buffer reallocation
+ * and an aspect jump in the middle of a scroll); the toolbar just covers its
+ * bottom edge.
+ */
+@supports (height: 100lvh) {
+  html[data-tour] .hall-stage:not(.compact) { bottom: auto; height: 100lvh; }
+}
 /* the first screen's playbill scrim leaves with the playbill */
 html[data-tour] .hall-scrims .s-home { transition: opacity 400ms var(--ease-out); }
 html[data-tour][data-scrolled="1"] .hall-scrims .s-home { opacity: 0; }
@@ -28,12 +38,16 @@ html[data-tour][data-scrolled="1"] .tb:not(.inner)::before { opacity: 1; }
 
 /* ------------------------------ chapters ------------------------------ */
 
-.tour, .tour-scrim { --cap-w: min(470px, 39vw); --cap-wide: min(620px, 50vw); --index-w: 28px; }
+.tour { --cap-w: min(470px, 39vw); --cap-wide: min(620px, 50vw); --index-w: 28px; }
 .tour { position: relative; z-index: 11; overflow-x: clip; }
 .tour-ch { position: relative; min-height: 140vh; display: flex; align-items: center; }
-/* verify r2: the curve -> books leg is the longest flight (about 14 m); a taller pair of sections gives the camera the
-   scroll it needs at a reading pace (landscape only; the portrait holds are measured per caption) */
-@media (min-width: 1024px) and (min-aspect-ratio: 1000/999) { .tour-ch:has(#curve), .tour-ch:has(#books) { min-height: 170vh; } }
+/* v21.3: the camera keeps an even pace along the path (tour.ts), so the scroll each leg gets sets its speed.
+   fix:scroll:r3: TourDriver sizes every leg from the path once it has measured the captions (html[data-legs], below);
+   these heights only hold the page until then */
+@media (min-width: 1024px) and (min-aspect-ratio: 1000/999) {
+  html:not([data-legs]) .tour-ch:has(#curve) { min-height: 170vh; }
+  html:not([data-legs]) .tour-ch:has(#books), html:not([data-legs]) .tour-ch:has(#hosts) { min-height: 240vh; }
+}
 /* the captions sit on the chrome's lines: left ones on the gutter (the wordmark, the playbill, the footer), right ones a side index short of the nav's edge */
 .tour-in { width: 100%; padding: 16vh var(--gutter); display: flex; justify-content: flex-start; }
 .tour-ch[data-side="right"] .tour-in { justify-content: flex-end; padding-right: calc(var(--gutter) + var(--index-w)); }
@@ -78,15 +92,29 @@ html[data-tour][data-scrolled="1"] .tb:not(.inner)::before { opacity: 1; }
  */
 .tour-cap > :not(.t-beats, .t-faces, .t-ledger, .pg-qa, .pg-gloss),
 .tour-cap .t-beats > li, .tour-cap .t-faces > li, .tour-cap .t-ledger > div, .tour-cap .pg-qa > details, .tour-cap .pg-gloss > div { --gone-at: calc(var(--top-h) + 56px); }
+/*
+ * v21.3, arriving: each row rises 14 px and comes up out of the rail over
+ * 56 px of scroll (from 24 px under the rail's top edge to 32 px above it),
+ * scrubbed by the scroll on the compositor (the scroll is the timing; the
+ * curve only shapes the settle), so a caption builds line by line as the
+ * camera lands on its subject. A caption read at its stop ends 24 px or more
+ * above the rail, so every row of it is whole while it is read. It starts at
+ * 1 %, not 0: a row at 0 is not painted until it shows, which put a whole
+ * chart's paint into the scroll frame where it appeared.
+ */
 @supports (animation-timeline: view()) {
   .tour-cap > :not(.t-beats, .t-faces, .t-ledger, .pg-qa, .pg-gloss),
   .tour-cap .t-beats > li, .tour-cap .t-faces > li, .tour-cap .t-ledger > div, .tour-cap .pg-qa > details, .tour-cap .pg-gloss > div {
-    animation: tour-out linear both;
-    animation-timeline: view(block var(--gone-at) 0px);
-    animation-range: exit 0% exit 36px;
+    animation: tour-in cubic-bezier(0.2, 0.7, 0.2, 1) both, tour-out linear forwards;
+    animation-timeline: view(block var(--gone-at) calc(var(--rail-h) - 24px)), view(block var(--gone-at) calc(var(--rail-h) - 24px));
+    animation-range: entry 0px entry 56px, exit 0% exit 36px;
   }
 }
+@keyframes tour-in { from { opacity: 0.01; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 @keyframes tour-out { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  @keyframes tour-in { from { opacity: 0.01; } to { opacity: 1; } }
+}
 @media (max-height: 779px) {
   .tour-cap > :not(.t-beats, .t-faces, .t-ledger, .pg-qa, .pg-gloss),
   .tour-cap .t-beats > li, .tour-cap .t-faces > li, .tour-cap .t-ledger > div, .tour-cap .pg-qa > details, .tour-cap .pg-gloss > div { --gone-at: calc(var(--top-h) + 20px); }
@@ -94,12 +122,33 @@ html[data-tour][data-scrolled="1"] .tb:not(.inner)::before { opacity: 1; }
 html[data-gone-js] :is(.tour-cap > *, .tour-cap .t-beats > li, .tour-cap .t-faces > li, .tour-cap .t-ledger > div, .tour-cap .pg-qa > details, .tour-cap .pg-gloss > div) { transition: opacity 180ms var(--ease-out); }
 html[data-gone-js] .tour-cap [data-gone] { opacity: 0; }
 
-/* the side scrim (desktop): fixed, static, shaped like the first screen's; solid under the caption, then a 190 px fade into the hall */
-.tour-scrim { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
-.tour-scrim > i { position: absolute; inset: 0; opacity: 0; transition: opacity 180ms linear; --cw: var(--cap-w); }
-.tour-scrim .l { background: linear-gradient(90deg, rgba(15, 11, 9, 0.9) 0, rgba(15, 11, 9, 0.86) calc(var(--gutter) + var(--cw) + 32px), rgba(15, 11, 9, 0) calc(var(--gutter) + var(--cw) + 220px)); }
-.tour-scrim .r { background: linear-gradient(270deg, rgba(15, 11, 9, 0.9) 0, rgba(15, 11, 9, 0.86) calc(var(--gutter) + var(--index-w) + var(--cw) + 32px), rgba(15, 11, 9, 0) calc(var(--gutter) + var(--index-w) + var(--cw) + 220px)); }
-@media (prefers-reduced-motion: reduce) { .tour-scrim > i { transition: none; } }
+/*
+ * The caption's ground (desktop), fix:scroll:r3-2: each caption carries its own, from its side's edge of the screen to
+ * 188 px past its text (solid .9 under the text, .86 at 32 px past it, then the fade into the hall: the first screen's
+ * shape), feathered in over 120 px above the label and out over 160 px below the last line. It scrolls with its text on
+ * the compositor (no script, no lag; it arrives before the label does), and two captions on opposite sides darken
+ * only their own corners: the two fixed side scrims it replaces both stood at full between the room, the scoop and
+ * the curve, and the hall went nearly black there.
+ */
+@media (min-width: 1024px) and (min-aspect-ratio: 1000/999) {
+  .tour-cap::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none;
+    top: -136px; bottom: -176px; left: calc(-1 * var(--gutter)); right: -220px;
+    background: linear-gradient(90deg, rgba(15, 11, 9, 0.9) 0, rgba(15, 11, 9, 0.86) calc(100% - 188px), rgba(15, 11, 9, 0) 100%);
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 120px, #000 calc(100% - 160px), transparent 100%);
+    mask-image: linear-gradient(180deg, transparent 0, #000 120px, #000 calc(100% - 160px), transparent 100%);
+  }
+  .tour-ch[data-side="right"] .tour-cap::before {
+    left: -220px; right: calc(-1 * (var(--gutter) + var(--index-w)));
+    background: linear-gradient(270deg, rgba(15, 11, 9, 0.9) 0, rgba(15, 11, 9, 0.86) calc(100% - 188px), rgba(15, 11, 9, 0) 100%);
+  }
+}
+
+/* ------------------------------ the legs, sized (fix:scroll:r3) ------------------------------ */
+
+/* TourDriver's sizes: the caption, the air above it (--pt) and after it (--pb), and nothing else (no min-height) */
+html[data-legs] .tour-ch { min-height: 0; }
+html[data-legs] .tour-ch .tour-in { padding-top: var(--pt, 8vh); padding-bottom: var(--pb, 16vh); }
 
 /* ------------------------------ the beats: a disc, the title, one sentence ------------------------------ */
 
@@ -196,8 +245,13 @@ html[data-tour-foot] .tour-index { opacity: 0; visibility: hidden; transition: o
 /* ------------------------------ portrait: the subject above, the text below ------------------------------ */
 
 @media (max-width: 1023.98px), (max-aspect-ratio: 999/1000) {
-  .tour-index, .tour-scrim { display: none; }
+  .tour-index { display: none; }
   .tour-ch { min-height: 128vh; min-height: 128svh; align-items: flex-start; }
+  /* v21.3: a portrait leg is the section it leaves; fix:scroll:1: the long ones (the crane down to the ticker, the
+     front to the bear, the bear across the front to the door) get more of the scroll */
+  html:not([data-legs]) .tour-ch:has(#curve) { min-height: 170vh; min-height: 170svh; }
+  html:not([data-legs]) .tour-ch:has(#scoop) { min-height: 180vh; min-height: 180svh; }
+  html:not([data-legs]) .tour-ch:has(#books) { min-height: 210vh; min-height: 210svh; }
   .tour-in, .tour-ch[data-side="right"] .tour-in { justify-content: flex-start; padding: 50svh var(--gutter) 10svh; }
   .tour-cap, .tour-cap.wide { width: 100%; max-width: 600px; }
   /* the caption's own ground: full bleed, a 120 px fade in above the label, solid .9 under every line, a short fade out */

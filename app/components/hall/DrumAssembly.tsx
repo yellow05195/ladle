@@ -17,8 +17,12 @@
  * in ARRIVAL order; each rolls in a straight low line to the pedestal's rim,
  * hops onto the felt and rolls to its owner's feet (stage.ts). Identical for
  * every result.
+ *
+ * v21.4 (perf F3): the cradle is compiled before it is shown (attachWarm: its
+ * program was a 134 to 178 ms link on its first frame); `cradle` is marked
+ * loaded once it is ready to draw.
  */
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { CAGE_Y, CHUTE_Y0, CHUTE_Y1, DROP_IN_H, DROP_IN_MS, MAX_BALLS, OMEGA_FAST, OMEGA_IDLE, R, inDrum } from "../drum/drum-sim";
@@ -31,6 +35,7 @@ import {
   cupPoint, ladlePoint, ladlePose, onSim, planServe, revealEnd, revealTime, servedAt, stage, staggerFor, type LadlePose,
 } from "./stage";
 import { hall, hallBus, type Quality } from "./store";
+import { attachWarm } from "./warm";
 
 const CAP = MAX_BALLS * 2 + 16;
 const v3 = new THREE.Vector3();
@@ -48,7 +53,16 @@ const cup = { x: 0, y: 0 };
 /** per ball: where it was drawn last frame and how it is turned (the roll along the serve) */
 interface Track { last: THREE.Vector3; q: THREE.Quaternion; seen: boolean }
 
+const CRADLE = M("higgsfield/drum-cradle-1k.glb");
+/**
+ * fix:1 (T7, T3): the cradle parsed from the canvas's first mount step (HallWorld), not from this one's (the third): the
+ * loader goes live on the cradle, which landed after the gate had opened (70 ms on a repeat visit, 0.5 s at 4x CPU)
+ */
+export function preloadCradle(): void { void loadGLTF(CRADLE).catch(() => {}); }
+
 export function DrumAssembly({ quality }: { quality: Quality }) {
+  // (the renderer, the scene and the camera for attachWarm, read when a model lands)
+  const three = useThree((s) => s.get);
   const rig = useRef<THREE.Group>(null);
   const cage = useRef<THREE.Group>(null);
   const gate = useRef<THREE.Group>(null);
@@ -86,7 +100,7 @@ export function DrumAssembly({ quality }: { quality: Quality }) {
   // the cradle
   useEffect(() => {
     let alive = true;
-    loadGLTF(M("higgsfield/drum-cradle-1k.glb")).then((g) => {
+    loadGLTF(CRADLE).then((g) => {
       if (!alive || !cradleRoot.current) return;
       const root = g.scene.clone(true);
       root.traverse((o) => {
@@ -100,11 +114,10 @@ export function DrumAssembly({ quality }: { quality: Quality }) {
       if (quality === "high") castShadows(root, true, false);
       root.scale.setScalar(CRADLE_SCALE);
       root.position.set(0, STAGE_TOP, 0);
-      cradleRoot.current.add(root);
-      hall.markLoaded("cradle");
+      return attachWarm(three(), cradleRoot.current, root).then(() => { if (alive) hall.markLoaded("cradle"); });
     }).catch(() => hall.markLoaded("cradle"));
     return () => { alive = false; };
-  }, [quality]);
+  }, [quality, three]);
 
   useEffect(() => () => {
     Object.values(geo).forEach((g) => g.dispose());

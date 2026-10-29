@@ -6,35 +6,41 @@
  * modal canvas is open; below the fold it drops to 15 fps, past two
  * viewport heights it stops (one last frame), except on the home's scroll
  * tour (v21), where the hall is the page and keeps its full rate. The low
- * tier (a software renderer, e.g. SwiftShader) always runs at 15 fps. The
- * shader programs are compiled before the first scroll (Warmup, v21 r2).
+ * tier (only through ?q=low: a software renderer gets the poster, quality.ts)
+ * always runs at 15 fps. perf v21.4: no frame is drawn before the WarmGate
+ * has linked every program under the final environment (the Canvas starts
+ * in "never"), and the scene mounts in four steps under the loader's still.
  */
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Cast } from "./Cast";
 import { CameraRig } from "./CameraRig";
-import { DrumAssembly } from "./DrumAssembly";
+import { DrumAssembly, preloadCradle } from "./DrumAssembly";
 import { FloorTicker } from "./FloorTicker";
-import { HallScene } from "./HallScene";
-import { Ladle } from "./Ladle";
+import { HallEnv, HallScene, shellReady } from "./HallScene";
+import { Ladle, ladleReady } from "./Ladle";
 import { Staff } from "./Staff";
 import { hall, useHall, type Quality } from "./store";
 import * as THREE from "three";
 import { TOUR, tourMode, tourPose, type TourPose } from "./tour";
+import { scrollingNow } from "./tour/scroll";
+import { FRAME_WINDOW_MS, frameVerdict } from "./quality";
+import { WarmGate } from "./WarmGate";
 
 function FrameDriver({ quality }: { quality: Quality }) {
   const { setFrameloop, invalidate, gl } = useThree();
-  const scroll = useHall((s) => s.scroll);
-  const paused = useHall((s) => s.paused);
   // v21: on the home's scroll tour the hall IS the page: it keeps playing at full rate the whole way down
-  const tour = useHall((s) => s.tour);
+  // (v21.3: read as one value, so crossing a scroll threshold on the tour re-renders nothing here)
+  const below = useHall((s) => (s.tour ? 0 : s.scroll));
+  const paused = useHall((s) => s.paused);
+  // perf v21.4 (F1): no frame until the WarmGate has linked every program under the final environment (the Canvas starts in "never")
+  const warm = useHall((s) => s.warm);
   useEffect(() => {
     let id = 0;
     const apply = () => {
       clearInterval(id);
       const hidden = document.visibilityState === "hidden";
-      const below = tour ? 0 : scroll;
-      if (hidden || paused || below === 2) { setFrameloop("never"); if (!hidden) invalidate(); return; }
+      if (!warm || hidden || paused || below === 2) { setFrameloop("never"); if (!hidden) invalidate(); return; }
       if (quality === "low" || below === 1) {
         setFrameloop("demand");
         id = window.setInterval(() => invalidate(), 1000 / 15);
@@ -45,124 +51,85 @@ function FrameDriver({ quality }: { quality: Quality }) {
     apply();
     document.addEventListener("visibilitychange", apply);
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", apply); };
-  }, [quality, scroll, tour, paused, setFrameloop, invalidate]);
+  }, [warm, quality, below, paused, setFrameloop, invalidate]);
+  // (glReady is the WarmGate's: it goes true with warm)
   useEffect(() => {
     const ctx = gl.getContext();
     (window as unknown as { __hallGL?: string }).__hallGL = ctx instanceof WebGL2RenderingContext ? "webgl2" : "webgl";
-    hall.set({ glReady: true });
   }, [gl]);
   return null;
 }
 
 /**
- * v21 fix (r2): the GPU programs and textures are prepared before anyone scrolls. The scroll tour brings
- * new objects into view (the stands, the bear's gallery, the door, the back of the room); each one's
- * first frame used to compile its shader program and upload its textures on the spot (frames of 100 to
- * 270 ms, the camera stepping half a metre). Once the room is lit, in idle time, every material in the
- * scene (visible or not, in or out of the frustum: compile() walks the graph with the room's lights) is
- * compiled, with KHR_parallel_shader_compile where the GPU has it (compileAsync), and every texture is
- * uploaded. Then, every 2 s for the first 30 s, only the parts of the scene that gained a material since
- * (the crowd's species, the watchers, the staff) are compiled again: a whole-scene pass costs tens of
- * milliseconds of CPU even when every program exists, which must never land in the middle of a scroll.
- * Once compiled, the room is drawn once from every stop and halfway along every leg, into one pixel (the
- * driver's own per-object state). Outside development the shader error check (a synchronous info-log
- * read per program) is off.
+ * v21 fix (r2), perf v21.4: the GPU's side of the scroll, prepared before anyone scrolls. The programs are no longer
+ * compiled here: the WarmGate links the whole scene's before the first frame (under its final environment), and
+ * attachWarm (warm.ts) those of every object that lands later, before it is shown (the passes this ran beside the live
+ * loop made the loop wait on the same programs: a 20-program pass took 3.26 s while the frames linked them one by one).
+ * What is left is the driver's own per-object state: once the hall is warm and lit, the room is drawn once from every
+ * stop of the tour and halfway along every leg, into one pixel, one pose per idle slot. Outside development the shader
+ * error check (a synchronous info-log read per program) is off.
  */
 function Warmup() {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
-  const camera = useThree((s) => s.camera);
-  const lit = useHall((s) => s.lit);
   useEffect(() => {
     if (process.env.NODE_ENV === "production") gl.debug.checkShaderErrors = false;
   }, [gl]);
+  // perf v21.4 (F1): the programs are the WarmGate's (the whole scene, before the first frame) and attachWarm's (what lands
+  // later); what is left here is the GPU's side, once the hall is warm and lit
   useEffect(() => {
-    if (!lit) return;
-    let alive = true, runs = 0, idleId = 0;
+    let alive = true, idleId = 0;
     const timers: number[] = [];
-    const seenTex = new WeakSet<THREE.Texture>();
-    const seenMat = new WeakSet<THREE.Material>();
-    const w = window as unknown as { requestIdleCallback?: (f: (d?: { timeRemaining: () => number }) => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
-    const run = () => {
-      idleId = 0;
-      if (!alive) return;
-      const t0 = performance.now();
-      const n0 = gl.info.programs?.length ?? 0;
-      // the scene's top-level parts that hold a material not compiled yet (the first pass: all of them)
-      const parts: THREE.Object3D[] = [];
-      for (const part of scene.children) {
-        let fresh = false;
-        part.traverse((o) => {
-          const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
-          if (!m) return;
-          for (const mat of Array.isArray(m) ? m : [m]) {
-            if (!seenMat.has(mat)) { seenMat.add(mat); fresh = true; }
-            for (const v of Object.values(mat)) {
-              if (v instanceof THREE.Texture && !seenTex.has(v) && v.image) { seenTex.add(v); gl.initTexture(v); }
-            }
-          }
-        });
-        if (fresh) parts.push(part);
-      }
-      if (parts.length) {
-        void Promise.all(parts.map((part) => gl.compileAsync(part, camera, scene))).then(() => {
-          if (process.env.NODE_ENV !== "production") {
-            const d = window as unknown as { __warm?: Array<[number, number, number, number]> };
-            // [when (performance.now()), parts compiled, how long until every program was ready (ms), programs added]
-            d.__warm = [...(d.__warm ?? []), [Math.round(t0), parts.length, Math.round(performance.now() - t0), (gl.info.programs?.length ?? 0) - n0]];
-          }
-          if (!primed) { primed = true; prime(0); }
-        }).catch(() => {});
-      }
+    type Deadline = { timeRemaining: () => number; didTimeout?: boolean };
+    const w = window as unknown as { requestIdleCallback?: (f: (d: Deadline) => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    const idle = (f: (d: Deadline) => void, timeout: number) => {
+      if (w.requestIdleCallback) idleId = w.requestIdleCallback((d) => { idleId = 0; if (alive) f(d); }, { timeout });
+      else timers.push(window.setTimeout(() => { if (alive) f({ timeRemaining: () => 8 }); }, 30));
     };
-    // then the GPU's side: one draw of the room from every stop of the tour and halfway along every leg, into a single pixel
-    // of the canvas (the next frame repaints it), one pose per idle slot, so the driver builds each object's draw state
-    // before the reader scrolls to it rather than in the middle of the scroll
-    let primed = false;
+    // one draw of the room from every stop of the tour and halfway along every leg, into a single pixel of the canvas (the
+    // next frame repaints it), so the driver builds each object's draw state before the reader scrolls to it rather than in
+    // the middle of the scroll. fix:scroll:1: one pose per idle slot, and only when the slot has room for it (a pose is a
+    // whole-scene draw: several ms), never while the page scrolls
     const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 60);
     const pose: TourPose = { px: 0, py: 0, pz: 0, lx: 0, ly: 0, lz: 0, fov: 40, vs: 0, lift: 0 };
-    const prime = (i0: number) => {
-      if (!alive || i0 * 0.5 > TOUR.length - 1) {
+    let askedAt = 0, askedFor = -1;
+    let litAt = 0;
+    const prime = (i: number) => {
+      if (!litAt) litAt = performance.now();
+      if (performance.now() - litAt < 1500) { timers.push(window.setTimeout(() => { if (alive) prime(i); }, 1500 - (performance.now() - litAt))); return; }
+      if (askedFor !== i) { askedFor = i; askedAt = performance.now(); }
+      if (!alive || i * 0.5 > TOUR.length - 1) {
         if (process.env.NODE_ENV !== "production") (window as unknown as { __primed?: number }).__primed = Math.round(performance.now());
         return;
       }
-      const go = (deadline?: { timeRemaining: () => number }) => {
-        idleId = 0;
-        if (!alive) return;
-        let i = i0;
-        // as many poses as this idle slot has room for (at least one)
-        do {
-          const t = i * 0.5;
-          if (t > TOUR.length - 1) break;
-          const el = gl.domElement;
-          const mode = tourMode(el.clientWidth || 1280, el.clientHeight || 800);
-          tourPose(t, mode, { fov: 40, vs: 0 }, pose);
-          cam.aspect = (el.clientWidth || 1280) / (el.clientHeight || 800);
-          cam.fov = pose.fov * 1.25;
-          cam.updateProjectionMatrix();
-          cam.position.set(pose.px, pose.py, pose.pz);
-          cam.lookAt(pose.lx, pose.ly, pose.lz);
-          const was = gl.getScissorTest();
-          gl.setScissorTest(true);
-          gl.setScissor(0, 0, 1, 1);
-          gl.render(scene, cam);
-          gl.setScissorTest(was);
-          i++;
-        } while (deadline && deadline.timeRemaining() > 12);
-        prime(i);
-      };
-      if (w.requestIdleCallback) idleId = w.requestIdleCallback(go as () => void, { timeout: 600 });
-      else window.setTimeout(go, 50);
+      idle((d) => {
+        // (a fast display leaves short idle slots: past the timeout, one pose anyway, the page being still)
+        if (scrollingNow() || (d.timeRemaining() < 8 && !d.didTimeout && performance.now() - askedAt < 600)) { timers.push(window.setTimeout(() => { if (alive) prime(i); }, scrollingNow() ? 320 : 0)); return; }
+        const el = gl.domElement;
+        const mode = tourMode(el.clientWidth || 1280, el.clientHeight || 800);
+        tourPose(i * 0.5, mode, { fov: 40, vs: 0 }, pose);
+        cam.aspect = (el.clientWidth || 1280) / (el.clientHeight || 800);
+        cam.fov = pose.fov * 1.25;
+        cam.updateProjectionMatrix();
+        cam.position.set(pose.px, pose.py, pose.pz);
+        cam.lookAt(pose.lx, pose.ly, pose.lz);
+        const was = gl.getScissorTest();
+        gl.setScissorTest(true);
+        gl.setScissor(0, 0, 1, 1);
+        const tp = performance.now();
+        gl.render(scene, cam);
+        gl.setScissorTest(was);
+        if (process.env.NODE_ENV !== "production") { const dw = window as unknown as { __primeLog?: number[][] }; (dw.__primeLog ??= []).push([Math.round(tp), i, +(performance.now() - tp).toFixed(1), gl.info.programs?.length ?? 0]); }
+        prime(i + 1);
+      }, 600);
     };
-    const later = (ms: number) => timers.push(window.setTimeout(() => {
-      if (!alive) return;
-      if (w.requestIdleCallback) idleId = w.requestIdleCallback(run, { timeout: 1000 });
-      else run();
-      if (++runs < 15) later(2000);
-    }, ms));
-    later(250);
-    return () => { alive = false; timers.forEach(clearTimeout); if (idleId) w.cancelIdleCallback?.(idleId); };
-  }, [lit, gl, scene, camera]);
+    // (the priming waits 1.5 s past the room being lit: the loader's pull back to the first screen is never interrupted)
+    let primed = false;
+    const go = () => { const s = hall.get(); if (primed || !s.warm || !s.lit) return; primed = true; off(); prime(0); };
+    const off = hall.subscribe(go);
+    go();
+    return () => { alive = false; off(); timers.forEach(clearTimeout); if (idleId) w.cancelIdleCallback?.(idleId); };
+  }, [gl, scene]);
   return null;
 }
 
@@ -204,41 +171,56 @@ function PerfProbe() {
  * ratio 1 the next step redraws the shadow map every third frame only (the
  * high tier's soft shadows are its dearest pass on an integrated GPU). Ten
  * seconds under 13 ms undoes one step (the shadows first). The low tier
- * keeps its fixed 15 fps and ratio 1.
+ * keeps its fixed 15 fps and ratio 1. perf v21.4 (F5, quality.ts
+ * frameVerdict): a window gives its verdict at any frame count (a GPU held
+ * under 10 fps steps down too), and none before the hall is warm.
+ *
+ * v21.3: the ratio is the Canvas's own prop (HallWorld's state, set through
+ * onDpr), so a render of the Canvas can never put it back to its default;
+ * it never goes above the screen's own ratio (no supersampling on a ratio-1
+ * screen); and a new ratio (a canvas reallocation) waits for the page to be
+ * still for half a second, never lands in the middle of a scroll.
  */
-function AdaptiveDpr({ max }: { max: number }) {
-  const setDpr = useThree((s) => s.setDpr);
+function AdaptiveDpr({ max, start, onDpr }: { max: number; start: number; onDpr: (v: number) => void }) {
   const gl = useThree((s) => s.gl);
   const lazyShadows = useRef(false);
   const frameN = useRef(0);
-  useEffect(() => () => { gl.shadowMap.autoUpdate = true; }, [gl]);
-  const dpr = useRef(Math.min(max, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1));
+  // v21.3: the shadow map is redrawn here, at most 60 times a second (the spot is fixed, so only the moving casters need it:
+  // a 60 Hz screen sees no change, a 120 to 240 Hz one stops paying for the shadow pass on every frame)
+  const shadowAt = useRef(0);
+  useEffect(() => { gl.shadowMap.autoUpdate = false; gl.shadowMap.needsUpdate = true; return () => { gl.shadowMap.autoUpdate = true; }; }, [gl]);
+  const dpr = useRef(start);
+  const pending = useRef<number | null>(null);
   const win = useRef<number[]>([]);
   const t0 = useRef(0);
   const calm = useRef(0);
   const last = useRef(0);
   useFrame((state) => {
     const now = performance.now();
-    if (lazyShadows.current && ++frameN.current % 3 === 0) gl.shadowMap.needsUpdate = true;
+    if (lazyShadows.current) { if (++frameN.current % 3 === 0) gl.shadowMap.needsUpdate = true; }
+    else if (now - shadowAt.current >= 15.5) { gl.shadowMap.needsUpdate = true; shadowAt.current = now; }
+    // a new ratio waits for the page to be still (reallocating the canvas costs a frame)
+    if (pending.current !== null && !scrollingNow(500)) { onDpr(pending.current); pending.current = null; }
     // below the fold (15 fps on demand) or paused: the frame time says nothing about the GPU
     if (state.frameloop !== "always") { win.current = []; last.current = 0; t0.current = 0; return; }
     if (last.current) win.current.push(now - last.current);
     last.current = now;
     if (!t0.current) t0.current = now;
-    if (now - t0.current < 2000) return;
+    if (now - t0.current < FRAME_WINDOW_MS) return;
     t0.current = now;
-    const a = win.current.sort((x, y) => x - y);
-    const med = a[Math.floor(a.length / 2)] ?? 16;
+    // perf v21.4 (F5): any full window gives a verdict (a GPU held under 10 fps now steps down); none before the hall is warm
+    const v = frameVerdict(win.current, { running: state.frameloop === "always", visible: document.visibilityState === "visible", warm: hall.get().warm });
     win.current = [];
-    if (a.length < 20) return; // paused or throttled: no verdict
-    const shadows = (on: boolean) => { lazyShadows.current = !on; gl.shadowMap.autoUpdate = on; gl.shadowMap.needsUpdate = true; };
-    if (med > 19 && dpr.current > 1) { dpr.current = Math.max(1, dpr.current - 0.25); calm.current = 0; setDpr(dpr.current); }
-    else if (med > 19 && gl.shadowMap.enabled && !lazyShadows.current) { calm.current = 0; shadows(false); }
-    else if (med < 13 && (lazyShadows.current || dpr.current < max)) {
+    if (!v) return;
+    const shadows = (on: boolean) => { lazyShadows.current = !on; gl.shadowMap.needsUpdate = true; };
+    const step = (r: number) => { dpr.current = r; pending.current = r; };
+    if (v === "slow" && dpr.current > 1) { calm.current = 0; step(Math.max(1, dpr.current - 0.25)); }
+    else if (v === "slow" && gl.shadowMap.enabled && !lazyShadows.current) { calm.current = 0; shadows(false); }
+    else if (v === "fast" && (lazyShadows.current || dpr.current < max)) {
       if (++calm.current >= 5) {
         calm.current = 0;
         if (lazyShadows.current) shadows(true);
-        else { dpr.current = Math.min(max, dpr.current + 0.25); setDpr(dpr.current); }
+        else step(Math.min(max, dpr.current + 0.25));
       }
     }
     else calm.current = 0;
@@ -247,29 +229,127 @@ function AdaptiveDpr({ max }: { max: number }) {
   return null;
 }
 
-export default function HallWorld({ quality, phone, compact = false }: { quality: Quality; phone: boolean; compact?: boolean }) {
+/**
+ * perf v21.4 (F7): the scene's mount steps: 1 the drivers, the camera and the environment (HallEnv: fix:1, the HDR and
+ * the PMREM's links from the first step, the environment being what the warm gate waits on), 2 the room (HallScene) and
+ * the crowd, 3 the drum, the floor ticker and the staff, 4 the ladle (its extruded bowl alone was 60 ms of a shared
+ * step in development). fix:1 (T1): the crowd no longer mounts with the first step, the canvas's creation (its cleanup
+ * now survives development's double effects: Cast); its frame callback still runs after the camera's.
+ */
+const MOUNT_STEPS = 4;
+
+/**
+ * fix:1 (T3): before a step mounts, the geometry its commit would otherwise build on the spot, built ahead (assets.ts
+ * buildAhead): the room's shell before step 2, the ladle's body before step 4. A page that never went idle (4x CPU)
+ * built the whole shell inside the room's commit (a 277 ms task).
+ */
+const STEP_READY: Partial<Record<number, () => Promise<void>>> = { 2: shellReady, 4: ladleReady };
+
+/**
+ * The staggered mount's clock, inside the Canvas: each step is asked for one idle slot after the scene's
+ * own commit of the one before. (Counted from HallWorld's mount, outside, the steps all ran out before the Canvas had
+ * measured itself and made its root, and the whole scene still mounted in one 340 ms commit.)
+ */
+function MountSteps({ step, next }: { step: number; next: () => void }) {
+  useEffect(() => {
+    // (in development, when each step's commit was in: window.__mountSteps, read by the gate's log)
+    if (process.env.NODE_ENV !== "production") ((window as unknown as { __mountSteps?: number[] }).__mountSteps ??= [])[step - 1] = Math.round(performance.now());
+    if (step >= MOUNT_STEPS) return;
+    let alive = true;
+    let cancel = () => {};
+    const w = window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    const go = () => {
+      if (!alive) return;
+      // fix:1 (T7): the environment in (a warm visit), the steps are what the gate waits on: the next one in a task of its
+      // own (a message), not after an idle slot that waited out its timeout behind the arrival's other tasks
+      if (hall.get().loaded.env) {
+        const c = new MessageChannel();
+        c.port1.onmessage = () => { c.port1.close(); if (alive) next(); };
+        c.port2.postMessage(0);
+        cancel = () => c.port1.close();
+        return;
+      }
+      // (a short timeout: the steps are what the gate waits on once the environment is in)
+      if (w.requestIdleCallback) { const id = w.requestIdleCallback(next, { timeout: 50 }); cancel = () => w.cancelIdleCallback?.(id); return; }
+      const id = window.setTimeout(next, 16);
+      cancel = () => clearTimeout(id);
+    };
+    const ready = STEP_READY[step + 1];
+    if (ready) void ready().then(go); else go();
+    return () => { alive = false; cancel(); };
+  }, [step, next]);
+  return null;
+}
+
+/**
+ * v21.3: memoised, with the scene's children built once per quality and layout: a render of the hall's DOM around it
+ * (a resize, the phone band) never re-renders the Canvas, nor through it every component of the scene.
+ */
+function HallWorld({ quality, phone, compact = false }: { quality: Quality; phone: boolean; compact?: boolean }) {
   const onLadle = useCallback(() => {}, []);
+  // the high tier's ratio: the screen's own up to 1.5, then whatever AdaptiveDpr finds the GPU can hold
+  const maxDpr = quality === "high" ? Math.min(1.5, Math.max(1, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)) : 1;
+  const [dpr, setDpr] = useState(maxDpr);
+  const gl = useMemo(() => ({ antialias: quality !== "low", powerPreference: "high-performance" as const, alpha: false, preserveDrawingBuffer: process.env.NODE_ENV !== "production" }), [quality]);
+  const camera = useMemo(() => ({ fov: 30, position: [0, 6, 11.6] as [number, number, number], near: 0.1, far: 60 }), []);
+  // the canvas is fixed: its box never moves with the scroll (no measuring on scroll)
+  const resize = useMemo(() => ({ scroll: false }), []);
+  // perf v21.4 (F7): the scene mounts in MOUNT_STEPS steps, one per idle slot, under the still (one 96-124 ms commit
+  // becomes one per step); the WarmGate compiles after the last. MountSteps moves them on from inside the Canvas
+  const [step, setStep] = useState(1);
+  const nextStep = useCallback(() => setStep((s) => Math.min(MOUNT_STEPS, s + 1)), []);
+  // (fix:1: the cradle, which the loader goes live on, parsed from the first step rather than the drum's own: DrumAssembly)
+  useEffect(() => { if (quality !== "none") preloadCradle(); }, [quality]);
+  // each slot is an element of its own memo, the same object from one step to the next: a step's commit renders what it
+  // mounts, the clock and the gate, never again what is already in (one memo for the whole fragment re-rendered every
+  // mounted component of the scene at every step). Each slot keeps its place, so nothing remounts when the step moves
+  const mountedAll = step >= MOUNT_STEPS;
+  const driver = useMemo(() => <FrameDriver quality={quality} />, [quality]);
+  const clock = useMemo(() => <MountSteps step={step} next={nextStep} />, [step, nextStep]);
+  const gate = useMemo(() => (quality === "none" ? null : <WarmGate mounted={mountedAll} />), [quality, mountedAll]);
+  const first = useMemo(() => (
+    <>
+      {quality === "none" ? null : <Warmup />}
+      {process.env.NODE_ENV !== "production" ? <PerfProbe /> : null}
+      {quality === "high" ? <AdaptiveDpr max={maxDpr} start={maxDpr} onDpr={setDpr} /> : null}
+      <CameraRig phone={phone} compact={compact} />
+      <HallEnv quality={quality} />
+    </>
+  ), [quality, phone, compact, maxDpr]);
+  const room = useMemo(() => <HallScene quality={quality} compact={compact} />, [quality, compact]);
+  const crowd = useMemo(() => <Cast quality={quality} phone={phone || compact} compact={compact} />, [quality, phone, compact]);
+  const drum = useMemo(() => <><DrumAssembly quality={quality} /><FloorTicker />{compact ? null : <Staff quality={quality} />}</>, [quality, compact]);
+  const ladle = useMemo(() => <Ladle onReady={onLadle} />, [onLadle]);
+  const scene = useMemo(() => (
+    <>
+      {driver}
+      {clock}
+      {gate}
+      {first}
+      {step >= 2 ? room : null}
+      {step >= 2 ? crowd : null}
+      {step >= 3 ? drum : null}
+      {step >= 4 ? ladle : null}
+    </>
+  ), [driver, clock, gate, first, room, crowd, drum, ladle, step]);
+  // perf v21.4 (F1): the soft shadows are three r186's PCF ("percentage"). R3F's "soft" is PCFSoftShadowMap, which r186 has
+  // removed: compile() keyed every program SHADOWMAP_TYPE_BASIC with it, then the first shadow pass swapped the type to
+  // PCFShadowMap (WebGLShadowMap.render), so the first frame linked every program a second time (the same pixels after)
   return (
     <Canvas
       className="hall-gl"
-      dpr={quality === "high" ? [1, 1.5] : 1}
-      shadows={quality === "high" ? "soft" : false}
-      gl={{ antialias: quality !== "low", powerPreference: "high-performance", alpha: false, preserveDrawingBuffer: process.env.NODE_ENV !== "production" }}
-      camera={{ fov: 30, position: [0, 6, 11.6], near: 0.1, far: 60 }}
+      frameloop="never"
+      dpr={quality === "high" ? dpr : 1}
+      shadows={quality === "high" ? "percentage" : false}
+      gl={gl}
+      camera={camera}
+      resize={resize}
       aria-hidden="true"
       tabIndex={-1}
     >
-      <FrameDriver quality={quality} />
-      {quality === "none" ? null : <Warmup />}
-      {process.env.NODE_ENV !== "production" ? <PerfProbe /> : null}
-      {quality === "high" ? <AdaptiveDpr max={1.5} /> : null}
-      <CameraRig phone={phone} compact={compact} />
-      <HallScene quality={quality} compact={compact} />
-      <DrumAssembly quality={quality} />
-      <Ladle onReady={onLadle} />
-      <Cast quality={quality} phone={phone || compact} compact={compact} />
-      {compact ? null : <Staff quality={quality} />}
-      <FloorTicker />
+      {scene}
     </Canvas>
   );
 }
+
+export default memo(HallWorld);

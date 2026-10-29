@@ -50,7 +50,7 @@ export function StakeSelector({ value, onChange, max, onHint }: { value: bigint;
   };
   const confirm = () => {
     const x = Number(raw.replace(",", "."));
-    if (Number.isFinite(x) && x >= 0.01) {
+    if (Number.isFinite(x) && x >= 0.1) {
       const l = BigInt(Math.round(x * 1000)) * 1_000_000n;
       onChange(l);
     }

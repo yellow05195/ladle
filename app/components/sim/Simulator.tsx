@@ -44,7 +44,7 @@ const logK = (v: number, lo: number, hi: number) => Math.log(v / lo) / Math.log(
 export function Simulator({ mode: initialMode = "enter", hideSwitch = false, oneLine }: { mode?: "enter" | "host"; hideSwitch?: boolean; oneLine?: string }) {
   const { t, locale } = useI18n();
   const [mode, setMode] = useState<"enter" | "host">(initialMode);
-  const [stakeK, setStakeK] = useState(logK(0.25, 0.01, 5));
+  const [stakeK, setStakeK] = useState(logK(0.25, 0.1, 5));
   const [totalK, setTotalK] = useState(logK(5, 0.1, 100));
   const [big, setBig] = useState(0.1);
   const [hostBps, setHostBps] = useState(100);
@@ -54,7 +54,7 @@ export function Simulator({ mode: initialMode = "enter", hideSwitch = false, one
   const reqId = useRef(0);
   const [moved, setMoved] = useState(false);
 
-  const stake = Math.round(logV(stakeK, 0.01, 5) * 100) / 100;
+  const stake = Math.round(logV(stakeK, 0.1, 5) * 100) / 100;
   const total = Math.max(stake + 0.05, Math.round(logV(totalK, 0.1, 100) * 10) / 10);
 
   // one worker per core (at most 4): the 20,000 windows are split between them and merged here
@@ -112,7 +112,7 @@ export function Simulator({ mode: initialMode = "enter", hideSwitch = false, one
             <button type="button" className="key sec xs" aria-pressed={mode === "host"} onClick={() => setMode("host")}>{t("sim.modeHost")}</button>
           </div>
         ) : null}
-        {mode === "enter" ? <Slider label={t("sim.stake")} value={`${formatSol(BigInt(Math.round(stake * 1e9)), 2)} SOL`} k={stakeK} onChange={(k) => { setStakeK(k); setMoved(true); }} lo="0.01 SOL" hi="5 SOL" /> : null}
+        {mode === "enter" ? <Slider label={t("sim.stake")} value={`${formatSol(BigInt(Math.round(stake * 1e9)), 2)} SOL`} k={stakeK} onChange={(k) => { setStakeK(k); setMoved(true); }} lo="0.1 SOL" hi="5 SOL" /> : null}
         <Slider label={t("sim.total")} value={`${total.toFixed(1)} SOL`} k={totalK} onChange={(k) => { setTotalK(k); setMoved(true); }} lo="0.1 SOL" hi="100 SOL" />
         {mode === "enter" ? <Slider label={t("sim.biggest")} value={formatPct(big, 0).replace("%", " %")} k={big / 0.2} onChange={(k) => { setBig(Math.round(k * 20) / 100); setMoved(true); }} lo="0" hi={"20 %"} /> : null}
         {mode === "host" ? (

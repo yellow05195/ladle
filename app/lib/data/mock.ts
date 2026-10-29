@@ -37,6 +37,51 @@ export const DEMO_CURVE: Curve = { x: 30n * LAMPORTS_PER_SOL, y: 1_073_000_000n 
 
 const SETTLED_HOLD_MS = 7000;
 const SOLD_HOLD_MS = 3000;
+/** v21.4: the history replay runs in slices of about this long, one per task, off the hydration task */
+const REPLAY_SLICE_MS = 6;
+
+/**
+ * perf v21.4 (T7): past this much of the replay's work since the last frame, the next slice waits for one (frames stay
+ * well under 100 ms; at 12 ms, 4x CPU's slow frames made the replay, and the loader's facts with it, about 1 s later)
+ */
+const REPLAY_FRAME_MS = 40;
+/**
+ * the most the replay waits for frames in all: past it, frames are slow to come (4x CPU, a loaded machine) and each wait
+ * let the arrival's other queued tasks go first, the first live window landing seconds later; at 1x it waits 2 or 3 times
+ */
+const REPLAY_WAIT_BUDGET_MS = 120;
+
+/**
+ * The next macrotask: scheduler.postTask where there is one, else a MessageChannel message (no 4 ms timer clamp).
+ * "user-blocking": the slices go before the arrival's other tasks (at 4x CPU, behind them at the default priority,
+ * the first live window came 14 to 24 s late). They go before the page's rendering too: posted back to back, they held
+ * every frame until Chrome's 100 ms anti-starvation stepped in (one 93 to 108 ms frame on every visit), so whenLedger
+ * waits for a frame (afterFrame) every REPLAY_FRAME_MS.
+ */
+function nextTask(fn: () => void): void {
+  const s = (globalThis as { scheduler?: { postTask?: (f: () => void, o?: { priority?: string }) => Promise<unknown> } }).scheduler;
+  if (s?.postTask) { void s.postTask(fn, { priority: "user-blocking" }); return; }
+  if (typeof MessageChannel !== "undefined") {
+    const c = new MessageChannel();
+    c.port1.onmessage = () => { c.port1.close(); fn(); };
+    c.port2.postMessage(0);
+    return;
+  }
+  setTimeout(fn, 0);
+}
+
+/**
+ * `fn` once the page has drawn its next frame, or now (false) where no frame is coming: no document (Node, the perf
+ * scripts), a hidden page. (A frame that never comes, a throttled frame, gives way to a 50 ms timer.)
+ */
+function afterFrame(fn: () => void): boolean {
+  if (typeof requestAnimationFrame !== "function" || typeof document === "undefined" || document.visibilityState !== "visible") return false;
+  let done = false;
+  const go = () => { if (done) return; done = true; clearTimeout(t); fn(); };
+  const t = setTimeout(go, 50);
+  requestAnimationFrame(go);
+  return true;
+}
 
 function windowId(n: number): string { return `demo-${n}`; }
 function parseId(id: string): number | null {
@@ -72,50 +117,137 @@ class MockSource implements DataSource {
   private focusK = -1;
   private listeners = new Set<Listener>();
   private interval: ReturnType<typeof setInterval> | null = null;
-  private running = false;
+  /** the first tick has run (the replay is done and the open window exists) */
+  private running: Promise<void> | null = null;
   private distribution: PastDistribution | null = null;
   private ledgerInst: Ledger | null = null;
+  /** v21.4: the next history round to replay; FIRST_WINDOW once the replay is done */
+  private replayNext = 1;
+  /** the replay's end (replayEnd) has run: the ledger is the replayed one */
+  private ended = false;
+  private replayed: Promise<Ledger> | null = null;
+  private replayDone: ((l: Ledger) => void) | null = null;
   private lastServed = FIRST_WINDOW - 1;
   readonly myOwner: Uint8Array = sfc32(0xf00d).bytes(32);
 
-  /** The demo ledger, replayed on first use (rounds 1 … FIRST_WINDOW-1). */
+  /**
+   * The demo ledger, replayed (rounds 1 … FIRST_WINDOW-1). v21.4: the replay runs in slices (whenLedger); a caller
+   * that needs it now finishes the rest at once, the correctness fallback (the page's own readers wait for it).
+   */
   ledger(): Ledger {
-    this.ensureEpoch();
-    if (!this.ledgerInst) {
-      const l = new Ledger();
-      const t = typeof performance !== "undefined" ? performance.now() : 0;
-      l.replay(FIRST_WINDOW - 1, (n) => this.closedAtMs(n));
-      if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
-        (window as unknown as { __ledgerMs?: number }).__ledgerMs = Math.round(performance.now() - t);
-      }
-      this.ledgerInst = l;
+    const l = this.book();
+    if (!this.ended) { this.replaySlice(Infinity); this.endReplay(false); }
+    return l;
+  }
+
+  /**
+   * The replayed ledger, without blocking: the replay runs in slices of about REPLAY_SLICE_MS, one per task, a frame
+   * let through every REPLAY_FRAME_MS (perf v21.4, T7); its end (replayEnd) in a task of its own, and the readers
+   * waiting on it in another (together they were one 28 to 31 ms slice).
+   */
+  whenLedger(): Promise<Ledger> {
+    const l = this.book();
+    if (this.ended) return Promise.resolve(l);
+    if (!this.replayed) {
+      this.replayed = new Promise<Ledger>((res, rej) => {
+        this.replayDone = res;
+        let since = typeof performance !== "undefined" ? performance.now() : 0, waited = 0;
+        const next = (f: () => void) => {
+          if (typeof performance === "undefined" || performance.now() - since < REPLAY_FRAME_MS || waited >= REPLAY_WAIT_BUDGET_MS) { nextTask(f); return; }
+          const t0 = performance.now();
+          if (!afterFrame(() => { since = performance.now(); waited += since - t0; nextTask(f); })) nextTask(f);
+        };
+        const step = () => {
+          try {
+            if (!this.replaySlice(REPLAY_SLICE_MS)) { next(step); return; }
+            next(() => { try { this.endReplay(true, next); } catch (e) { rej(e); } });
+          } catch (e) { rej(e); }
+        };
+        nextTask(step);
+      });
     }
-    return this.ledgerInst;
+    return this.replayed;
+  }
+
+  /** Runs `fn` with the replayed ledger (now, or when the replay ends); returns what undoes it. */
+  onLedger(fn: (l: Ledger) => () => void): () => void {
+    if (this.ledgerInst && this.ended) return fn(this.ledgerInst);
+    let off: (() => void) | null = null, alive = true;
+    this.whenLedger().then((l) => { if (alive) off = fn(l); }).catch(() => {});
+    return () => { alive = false; off?.(); };
+  }
+
+  /** The ledger as far as it is replayed. */
+  private book(): Ledger {
+    this.ensureEpoch();
+    return (this.ledgerInst ??= new Ledger());
+  }
+
+  /** Replays history rounds until `budgetMs` is spent (at least one round). Returns whether the replay is done. */
+  private replaySlice(budgetMs: number): boolean {
+    const l = this.book();
+    const last = FIRST_WINDOW - 1;
+    if (this.replayNext > last) return true;
+    const clock = typeof performance !== "undefined" ? performance : Date;
+    const t = clock.now();
+    const closedAt = (n: number) => this.closedAtMs(n);
+    while (this.replayNext <= last) {
+      l.replayStep(this.replayNext, this.replayNext, closedAt);
+      this.replayNext++;
+      if (clock.now() - t >= budgetMs) break;
+    }
+    const done = this.replayNext > last;
+    if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+      // dev: the replay's total and its longest slice (perf/verify.mjs reads __ledgerMs); a forced finish is counted
+      const w = window as unknown as { __ledgerMs?: number; __ledgerSlices?: { n: number; maxMs: number; forced: number } };
+      const ms = clock.now() - t;
+      const s = (w.__ledgerSlices ??= { n: 0, maxMs: 0, forced: 0 });
+      s.n++; s.maxMs = Math.max(s.maxMs, Math.round(ms * 10) / 10);
+      if (budgetMs === Infinity) s.forced++;
+      w.__ledgerMs = Math.round((w.__ledgerMs ?? 0) + ms);
+    }
+    return done;
+  }
+
+  /**
+   * The end of the replay (every round replayed): the history's activity list, then the readers waiting on whenLedger
+   * (`later`: in a task of their own, through `post`). Once only.
+   */
+  private endReplay(later: boolean, post: (f: () => void) => void = nextTask): void {
+    if (this.ended) return;
+    const l = this.book();
+    l.replayEnd();
+    this.ended = true;
+    const done = this.replayDone;
+    this.replayDone = null;
+    if (!done) return;
+    if (later) post(() => done(l)); else done(l);
   }
 
   /* ---- DataSource ---- */
 
   async getLiveWindow(): Promise<LiveWindow> {
-    this.ensureRunning();
+    await this.ensureRunning();
     return this.snapshot();
   }
 
   subscribe(cb: Listener): () => void {
-    this.ensureRunning();
+    void this.ensureRunning();
     this.listeners.add(cb);
-    cb(this.snapshot());
+    // v21.4: no window before the replay is done; the first tick's snapshot reaches every listener
+    if (this.windows.size) cb(this.snapshot());
     return () => { this.listeners.delete(cb); };
   }
 
   async getWindow(id: string): Promise<WindowView | null> {
-    const l = this.ledger();
+    const l = await this.whenLedger();
     const n = id === "latest" ? l.lastRound : parseId(id);
     if (n === null || !l.rounds.has(n)) return null;
     return this.settledView(n);
   }
 
   async listRecentWindows(): Promise<WindowView[]> {
-    const l = this.ledger();
+    const l = await this.whenLedger();
     const out: WindowView[] = [];
     for (let n = l.lastRound; n >= Math.max(1, l.lastRound - 11); n--) if (l.rounds.has(n)) out.push(this.settledView(n));
     return out;
@@ -123,7 +255,7 @@ class MockSource implements DataSource {
 
   async getPastDistribution(): Promise<PastDistribution> {
     if (this.distribution) return this.distribution;
-    const l = this.ledger();
+    const l = await this.whenLedger();
     const rows: Array<{ frac: number; mult: number }> = [];
     for (let n = Math.max(1, FIRST_WINDOW - 150); n < FIRST_WINDOW; n++) {
       const r = l.rounds.get(n);
@@ -221,13 +353,17 @@ class MockSource implements DataSource {
     if (this.t0 === 0) this.t0 = this.now() - Math.floor(WINDOW_MS * 0.4);
   }
 
-  private ensureRunning(): void {
-    if (this.running || typeof window === "undefined") return;
-    this.running = true;
-    this.ensureEpoch();
-    this.ledger();
-    this.tick();
-    this.interval = setInterval(() => this.tick(), 100);
+  /** v21.4: the first tick and the 100 ms tick start once the sliced replay is done (in a task of their own: T7). */
+  private ensureRunning(): Promise<void> {
+    if (typeof window === "undefined") return Promise.resolve();
+    if (!this.running) {
+      this.ensureEpoch();
+      this.running = this.whenLedger().then(() => new Promise<void>((r) => nextTask(r))).then(() => {
+        this.tick();
+        this.interval = setInterval(() => this.tick(), 100);
+      });
+    }
+    return this.running;
   }
 
   private focus(): DemoWindow | undefined { return this.windows.get(this.focusK); }
@@ -447,17 +583,18 @@ class MockSource implements DataSource {
 const mock = new MockSource();
 export const mockSource: DataSource & { maxEntryNow(): bigint; release(): void; openRound(): number } = mock;
 
-/** The demo history: the ledger's curve, the live activity, the books and the demo Genesis count. */
+/** The demo history: the ledger's curve, the live activity, the books and the demo Genesis count. v21.4: each waits for the sliced replay. */
 export const mockHistory: HistorySource = {
   source: "demo",
-  async getCurve() { return mock.ledger().points.slice(); },
+  async getCurve() { return (await mock.whenLedger()).points.slice(); },
   subscribeActivity(cb: (items: ActivityItem[]) => void) {
-    const l = mock.ledger();
-    const off = l.onActivity(() => cb(l.activity));
-    cb(l.activity);
-    return off;
+    return mock.onLedger((l) => {
+      const off = l.onActivity(() => cb(l.activity));
+      cb(l.activity);
+      return off;
+    });
   },
-  subscribeCurve(cb: () => void) { return mock.ledger().onChange(cb); },
-  async getBooks() { return mock.ledger().books(Date.now()); },
+  subscribeCurve(cb: () => void) { return mock.onLedger((l) => l.onChange(cb)); },
+  async getBooks() { return (await mock.whenLedger()).books(Date.now()); },
   async getGenesis() { return { claimed: demoGenesisClaimed(mock.openRound()) + countLocalProfiles(), cap: 1000 }; },
 };

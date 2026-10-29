@@ -16,14 +16,16 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
-import { glowTexture, roomEnvironment, setupRenderer } from "../drum/materials";
-import { M, castShadows, loadGLTF, loadTexture, normalise, tint } from "./assets";
+import { glowTexture, setupRenderer } from "../drum/materials";
+import { M, STUB_NORMAL, STUB_WHITE, buildAhead, castShadows, loadGLTF, loadTexture, normalise, stubTexture as stub, tint, uploadEach } from "./assets";
+import { buildEnv } from "./env";
 import { Builder } from "./kit";
 import { STANDS, azimuthToXZ } from "./seats";
 import { STAGE_TOP } from "./stage";
 import { hall, type Quality } from "./store";
 import { tourBus } from "./tour";
+import { whenStill } from "./tour/scroll";
+import { attachWarm } from "./warm";
 
 const C = {
   walnut: "#3A2618", walnutHi: "#5A3A22", oxblood: "#4A1418", oxbloodHi: "#6E1F24", felt: "#12352F", feltHi: "#1D4A42",
@@ -41,8 +43,12 @@ const rad = (d: number) => (d * Math.PI) / 180;
 const faceIn = (a: number) => Math.PI - rad(a);
 const faceInv = (a: number) => -rad(a);
 
-/** The room shell: walls, doorways, the ceiling, brass trims, the stage plinth's trims. */
-function buildShell(): THREE.BufferGeometry {
+/**
+ * The room shell: walls, doorways, the ceiling, brass trims, the stage plinth's trims. Built in steps (perf v21.4: the
+ * walls and doorways, each tier of the stands, then the ceiling, the trims and the merge), so it can be built ahead in
+ * idle slots (takeShell below).
+ */
+function* shellSteps(): Generator<void, THREE.BufferGeometry> {
   const b = new Builder();
   const seg = 24, w = (2 * Math.PI * WALL_R) / seg + 0.05;
   for (let k = 0; k < seg; k++) {
@@ -75,6 +81,7 @@ function buildShell(): THREE.BufferGeometry {
     b.box(3.2, 7.5 - 4.6, 0.14, C.walnut, x, 4.6, z, { ry });
     b.box(3.2, 0.9, 0.16, C.walnut, x, 3.7, z, { ry });
   }
+  yield;
   // v21: the stands, four walnut tiers round the back of the room (oxblood carpet, brass nosing), aisles at the doors
   const step = 3;
   for (let t = 0; t < STANDS.tiers; t++) {
@@ -91,6 +98,7 @@ function buildShell(): THREE.BufferGeometry {
       const [xn, zn] = azimuthToXZ(mid, r0 + 0.022);
       b.box(2 * r0 * Math.sin(rad(step / 2)) + 0.03, 0.03, 0.045, C.brass, xn, top - 0.012, zn, { ry });
     }
+    yield;
   }
   // ceiling, brass ring trims round the stage
   b.add(new THREE.CircleGeometry(WALL_R + 0.3, 48), C.ceiling, 0, WALL_H, 0, { pivot: "center", rx: Math.PI / 2 });
@@ -107,6 +115,11 @@ function buildShell(): THREE.BufferGeometry {
   }
   return g;
 }
+
+/** the shell, built ahead in idle slots from this module's load (assets.ts buildAhead): its mount step only takes it */
+const takeShell = buildAhead(shellSteps);
+/** resolves once the shell is built (its last steps then go one per task): HallWorld mounts the room's step after it */
+export const shellReady = takeShell.ready;
 
 /** The spotlight's visible cone: additive, vertical fade, a slow scrolling noise. */
 function coneMaterial(): THREE.ShaderMaterial {
@@ -154,8 +167,38 @@ function Dust({ count }: { count: number }) {
   return <points ref={ref} geometry={geo} material={mat} />;
 }
 
-export function HallScene({ quality, onEnv, onShell, compact = false }: { quality: Quality; onEnv?: () => void; onShell?: () => void; compact?: boolean }) {
+/**
+ * The renderer, the fog and the environment, mounted with the canvas's first step (fix:1, T7: from HallScene, the room's
+ * own step, the HDR and the PMREM's links started one step later, and the environment is what the warm gate waits on).
+ * perf v21.4, F2: env.ts links the PMREM's programs while the HDR downloads, the conversion in a task of its own; past
+ * 3.5 s without the HDR the room stands in, and the HDR swaps in later on the same programs.
+ */
+export function HallEnv({ quality, onEnv }: { quality: Quality; onEnv?: () => void }) {
   const { gl, scene } = useThree();
+  const high = quality === "high";
+  useEffect(() => {
+    setupRenderer(gl, "aces");
+    gl.toneMappingExposure = 1.05;
+    // perf v21.4: three r186 has no PCFSoftShadowMap any more (the Canvas's shadows="soft"): its first shadow pass turns it
+    // into PCFShadowMap. compile() never runs that pass, so every program compiled before it (the WarmGate's, attachWarm's)
+    // was keyed SHADOWMAP_TYPE_BASIC and linked again by its first frame (17 programs in one 1.8 s task, then the bear and
+    // the ladle mid-scroll). The type it would become, set now: the same pixels
+    if (gl.shadowMap.type === THREE.PCFSoftShadowMap) gl.shadowMap.type = THREE.PCFShadowMap;
+    scene.fog = new THREE.Fog(C.hall, 16, 32);
+    scene.background = new THREE.Color("#0d0a08");
+    const ac = new AbortController();
+    // (HallScene's frame loop re-reads the base intensity when the HDR replaces the room: it watches scene.environment)
+    void buildEnv(gl, scene, high ? "hdr" : "room", { signal: ac.signal })
+      .then(() => { if (!ac.signal.aborted) onEnv?.(); });
+    return () => ac.abort();
+  }, [gl, scene, high, onEnv]);
+  return null;
+}
+
+export function HallScene({ quality, onShell, compact = false }: { quality: Quality; onShell?: () => void; compact?: boolean }) {
+  const { gl, scene } = useThree();
+  // (the renderer, the scene and the camera for attachWarm, read when a model lands; never a dependency of the props)
+  const three = useThree((s) => s.get);
   const props = useRef<THREE.Group>(null);
   const spot = useRef<THREE.SpotLight>(null);
   const spotTarget = useMemo(() => new THREE.Object3D(), []);
@@ -163,46 +206,30 @@ export function HallScene({ quality, onEnv, onShell, compact = false }: { qualit
   const halos = useRef<THREE.SpriteMaterial[]>([]);
   const cone = useMemo(() => coneMaterial(), []);
   const high = quality === "high";
-  const shell = useMemo(() => buildShell(), []);
+  const shell = useMemo(() => takeShell(), []);
   const shellMat = useMemo(() => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.15, envMapIntensity: 0.6 }), []);
-  // v21 fix: a walnut base until the parquet's maps arrive (never a flat untextured grey); the maps then take over at #8c8c8c
-  const floorMat = useMemo(() => new THREE.MeshStandardMaterial({ color: new THREE.Color("#3f2c1f"), roughness: 0.6, metalness: 0, envMapIntensity: 0.5 }), []);
-  const marbleMat = useMemo(() => new THREE.MeshStandardMaterial({ color: new THREE.Color("#3a3a3a"), roughness: 0.25, metalness: 0, envMapIntensity: 0.9 }), []);
+  // v21 fix: a walnut base until the parquet's maps arrive (never a flat untextured grey); the maps then take over at #8c8c8c.
+  // v21.3: the maps that arrive later have 1x1 stand-ins from the start (white, a flat normal, full roughness: the look is
+  // unchanged), so these materials compile once with their maps' slots and the real images only swap in: a texture that
+  // lands during the first scroll no longer recompiles a shader program in the middle of it (a 1.4 s freeze on a cold load)
+  const floorMat = useMemo(() => new THREE.MeshStandardMaterial({ color: new THREE.Color("#3f2c1f"), roughness: 0.6, metalness: 0, envMapIntensity: 0.5, map: stub(STUB_WHITE, true), normalMap: stub(STUB_NORMAL, false), roughnessMap: stub(STUB_WHITE, false) }), []);
+  const marbleMat = useMemo(() => new THREE.MeshStandardMaterial({ color: new THREE.Color("#3a3a3a"), roughness: 0.25, metalness: 0, envMapIntensity: 0.9, map: stub(STUB_WHITE, true), normalMap: stub(STUB_NORMAL, false) }), []);
   const stageMats = useMemo(() => [
     new THREE.MeshStandardMaterial({ color: C.walnut, roughness: 0.55, metalness: 0.05 }),
-    new THREE.MeshStandardMaterial({ color: C.felt, roughness: 0.95, metalness: 0, envMapIntensity: 0.25 }),
+    new THREE.MeshStandardMaterial({ color: C.felt, roughness: 0.95, metalness: 0, envMapIntensity: 0.25, normalMap: stub(STUB_NORMAL, false), roughnessMap: stub(STUB_WHITE, false) }),
     new THREE.MeshStandardMaterial({ color: C.walnut, roughness: 0.55 }),
   ], []);
   const plinthMat = useMemo(() => new THREE.MeshStandardMaterial({ color: C.walnut, roughness: 0.5, metalness: 0.05 }), []);
 
-  // the renderer, the fog, the environment
-  useEffect(() => {
-    setupRenderer(gl, "aces");
-    gl.toneMappingExposure = 1.05;
-    scene.fog = new THREE.Fog(C.hall, 16, 32);
-    scene.background = new THREE.Color("#0d0a08");
-    let alive = true;
-    if (high) {
-      new HDRLoader().loadAsync("/assets/hdri/warm_bar_1k.hdr").then((hdr) => {
-        if (!alive) return;
-        const pmrem = new THREE.PMREMGenerator(gl);
-        hdr.mapping = THREE.EquirectangularReflectionMapping;
-        scene.environment = pmrem.fromEquirectangular(hdr).texture;
-        scene.environmentIntensity = 0.35;
-        hdr.dispose(); pmrem.dispose();
-        hall.markLoaded("env"); onEnv?.();
-      }).catch(() => { scene.environment = roomEnvironment(gl); scene.environmentIntensity = 0.3; hall.markLoaded("env"); onEnv?.(); });
-    } else {
-      scene.environment = roomEnvironment(gl);
-      scene.environmentIntensity = 0.3;
-      hall.markLoaded("env"); onEnv?.();
-    }
-    return () => { alive = false; };
-  }, [gl, scene, high, onEnv]);
+  // the environment's base intensity, re-read by the frame loop below whenever the environment changes (once it is in,
+  // and again when the HDR replaces the room standing in: buildEnv sets the new base with it)
+  const envBase = useRef(0);
+  const envTex = useRef<THREE.Texture | null>(null);
 
   // textures
   useEffect(() => {
     let alive = true;
+    let cancel = () => {};
     const T = "/assets/textures";
     Promise.all([
       loadTexture(`${T}/WoodFloor064/WoodFloor064_color.webp`, true, 8),
@@ -214,13 +241,22 @@ export function HallScene({ quality, onEnv, onShell, compact = false }: { qualit
       loadTexture(`${T}/Fabric026/Fabric026_roughness.webp`, false, 10),
     ]).then(([wc, wn, wr, mc, mn, fn, fr]) => {
       if (!alive) return;
-      floorMat.map = wc!; floorMat.normalMap = wn!; floorMat.roughnessMap = wr!; floorMat.color = new THREE.Color("#8c8c8c"); floorMat.needsUpdate = true;
-      marbleMat.map = mc!; marbleMat.normalMap = mn!; marbleMat.color = new THREE.Color("#5a5a5a"); marbleMat.needsUpdate = true;
-      const felt = stageMats[1]!;
-      felt.normalMap = fn!; felt.roughnessMap = fr!; felt.normalScale = new THREE.Vector2(0.6, 0.6); felt.needsUpdate = true;
+      // v21.3: uploaded and swapped in once the page is still (an upload is a few milliseconds of a frame), the same programs
+      cancel = whenStill(() => {
+        if (!alive) return;
+        // perf v21.4 (F8): one upload per idle slot (seven in one task were 70 ms in development), then the swap (the same programs)
+        void uploadEach(gl, [wc, wn, wr, mc, mn, fn, fr], () => alive).then(() => {
+          if (!alive) return;
+          for (const m of [floorMat, marbleMat, stageMats[1]!]) for (const k of ["map", "normalMap", "roughnessMap"] as const) { const old = m[k]; if (old && old.userData.stub) old.dispose(); }
+          floorMat.map = wc!; floorMat.normalMap = wn!; floorMat.roughnessMap = wr!; floorMat.color = new THREE.Color("#8c8c8c"); floorMat.needsUpdate = true;
+          marbleMat.map = mc!; marbleMat.normalMap = mn!; marbleMat.color = new THREE.Color("#5a5a5a"); marbleMat.needsUpdate = true;
+          const felt = stageMats[1]!;
+          felt.normalMap = fn!; felt.roughnessMap = fr!; felt.normalScale = new THREE.Vector2(0.6, 0.6); felt.needsUpdate = true;
+        });
+      });
     }).catch(() => {});
-    return () => { alive = false; };
-  }, [floorMat, marbleMat, stageMats]);
+    return () => { alive = false; cancel(); };
+  }, [gl, floorMat, marbleMat, stageMats]);
 
   // the props
   useEffect(() => {
@@ -228,11 +264,16 @@ export function HallScene({ quality, onEnv, onShell, compact = false }: { qualit
     if (!root) return;
     if (compact) { hall.markLoaded("shell"); return; }
     let alive = true;
+    // perf v21.4 (F3): every prop is compiled before it is shown (attachWarm: hung hidden, its programs linked off the main
+    // thread under the final environment, then shown); drawn the moment it landed, LightMetal was a 133 to 188 ms link
     const add = (o: THREE.Object3D, a: number, r: number, y = 0, ry = faceIn(a)) => {
+      // (fix:1: never once this effect is gone: development runs it, its cleanup and it again, and every model landed
+      // for both runs, so the room held each prop twice)
+      if (!alive) return;
       const [x, z] = azimuthToXZ(a, r);
       o.position.set(x, y, z);
       o.rotation.y = ry;
-      root.add(o);
+      void attachWarm(three(), root, o);
     };
     const lampMat = (intensity: number) => {
       const m = new THREE.MeshStandardMaterial({ color: C.lamp, emissive: new THREE.Color(C.lamp), emissiveIntensity: intensity, roughness: 0.4 });
@@ -363,19 +404,18 @@ export function HallScene({ quality, onEnv, onShell, compact = false }: { qualit
         const w = normalise(m, 0.7);
         w.position.set(0, 7.5 - 0.7, 0.3);
         w.rotation.x = Math.PI;
-        root.add(w);
+        if (alive) void attachWarm(three(), root, w);
       }),
     ];
     Promise.allSettled(jobs).then(() => { if (alive) { hall.markLoaded("shell"); onShell?.(); } });
     return () => { alive = false; };
-  }, [quality, high, onShell, compact]);
+  }, [quality, high, onShell, compact, three]);
 
   useEffect(() => () => { shell.dispose(); shellMat.dispose(); floorMat.dispose(); marbleMat.dispose(); stageMats.forEach((m) => m.dispose()); plinthMat.dispose(); cone.dispose(); }, [shell, shellMat, floorMat, marbleMat, stageMats, plinthMat, cone]);
 
   // the light comes up (lit), the spot narrows over the last slots and glows once when the round is served
   const ramp = useRef(0);
   const hemi = useRef<THREE.HemisphereLight>(null);
-  const envBase = useRef(0);
   const doorLights = useRef<Array<THREE.PointLight | null>>([]);
   useFrame((state, dt) => {
     const s = hall.get();
@@ -385,7 +425,7 @@ export function HallScene({ quality, onEnv, onShell, compact = false }: { qualit
     // so their pools on the floor never blow out to a flat cream plane behind the captions
     if (hemi.current) hemi.current.intensity = 0.25 + 0.4 * tw;
     if (scene.environment) {
-      if (!envBase.current) envBase.current = scene.environmentIntensity;
+      if (scene.environment !== envTex.current) { envTex.current = scene.environment; envBase.current = scene.environmentIntensity; }
       scene.environmentIntensity = envBase.current * (1 + 0.6 * tw);
     }
     gl.toneMappingExposure = 1.05 + 0.04 * tw;

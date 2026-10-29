@@ -47,9 +47,13 @@ export function setupRenderer(gl: THREE.WebGLRenderer, tone: "aces" | "neutral" 
   gl.outputColorSpace = THREE.SRGBColorSpace;
 }
 
-/** v20 brass: the cage, the chute, the trims, the ladle. A room colour, never a result. */
-export function brass(): THREE.MeshPhysicalMaterial {
-  return new THREE.MeshPhysicalMaterial({ color: "#C99A4B", metalness: 1, roughness: 0.22, envMapIntensity: 1.1 });
+/**
+ * v20 brass: the cage, the chute, the trims, the ladle. A room colour, never a result. v21.4 (perf F12): a Standard
+ * material, one shader program fewer to link at arrival; it used no Physical feature, and at metalness 1 both shade
+ * the same (the A/B in screenshots/v21/perf/out/brass-ab.json: identical frames).
+ */
+export function brass(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color: "#C99A4B", metalness: 1, roughness: 0.22, envMapIntensity: 1.1 });
 }
 
 /** Brushed copper-brass (the cage, the chute, the rail): warm metal, anisotropic. */

@@ -17,7 +17,7 @@
  * (no shadows, per-instance frustum culling, animated at a lower rate).
  */
 import * as THREE from "three";
-import { loadGLTF } from "./assets";
+import { STUB_WHITE, loadGLTF, stubTexture } from "./assets";
 import { applyStatic, buildScarf, measure } from "./character";
 import { petUrl, type Species } from "./pets";
 
@@ -81,6 +81,7 @@ export function bakeSpecies(species: Species): Promise<SpeciesBake> {
   let p = bakes.get(species);
   if (!p) {
     p = loadGLTF(petUrl(species)).then((g) => {
+      const t0 = performance.now();
       const info = measure(species, g);
       const scene = g.scene.clone(true);
       const root = new THREE.Group();
@@ -121,7 +122,10 @@ export function bakeSpecies(species: Species): Promise<SpeciesBake> {
         clips[name] = { frames, dur, data };
       }
       scarf.clear();
-      return { species, geos: meshes.map((m) => floatGeometry(m.geometry)), map, clips, slots: S };
+      const bake: SpeciesBake = { species, geos: meshes.map((m) => floatGeometry(m.geometry)), map, clips, slots: S };
+      // (development: [when, species, ms] of each bake, for the perf probes in screenshots/v21/perf)
+      if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") ((window as unknown as { __bakeLog?: Array<[number, string, number]> }).__bakeLog ??= []).push([Math.round(t0), species, +(performance.now() - t0).toFixed(1)]);
+      return bake;
     });
     p.catch(() => bakes.delete(species));
     bakes.set(species, p);
@@ -129,9 +133,13 @@ export function bakeSpecies(species: Species): Promise<SpeciesBake> {
   return p;
 }
 
-/** The crowd's material: the colormap, matte; per-instance colour (white for the pets, the scarf's colour for its pieces). */
+/**
+ * The crowd's material: the colormap, matte; per-instance colour (white for the pets, the scarf's colour for its pieces).
+ * perf v21.4 (F3): without the colormap yet, a 1x1 white stand-in from the start (`userData.stub`), so the material is
+ * compiled once with its map's slot and the colormap's arrival only swaps a uniform (no new program for the first pet).
+ */
 export function crowdMaterial(map: THREE.Texture | null): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ map, roughness: 0.92, metalness: 0, envMapIntensity: 1 });
+  return new THREE.MeshStandardMaterial({ map: map ?? stubTexture(STUB_WHITE, true), roughness: 0.92, metalness: 0, envMapIntensity: 1 });
 }
 
 const WHITE = new THREE.Color("#ffffff");
@@ -174,6 +182,14 @@ export class CrowdBatch {
   constructor(maxInstances: number, material: THREE.Material, opts: { shadows: boolean; cull: boolean }) {
     this.cap = maxInstances;
     this.mesh = new THREE.BatchedMesh(maxInstances, 12_500, 24_000, material);
+    // perf v21.4 (F3): the batch's program is final from the start, so the gate (or attachWarm) links the one the pets draw
+    // with. The per-instance colour texture (three r186's private _initColorsTexture: white, as the first setColorAt would
+    // make it); made by that first setColorAt instead, it changed the program (USE_BATCHING_COLOR): a 135 to 165 ms link at
+    // 3.3 s. And the batch's geometry: empty until its first addGeometry, it keyed the program without normals or positions
+    // (flat shading): the scarf box (every species' float layout: position, normal, uv, an index) goes in first
+    const bm = this.mesh as unknown as { _colorsTexture?: THREE.DataTexture | null; _initColorsTexture?: () => void };
+    if (typeof bm._initColorsTexture === "function" && bm._colorsTexture === null) bm._initColorsTexture();
+    this.scarfId = this.mesh.addGeometry(scarfGeometry());
     this.mesh.sortObjects = false;
     this.mesh.perObjectFrustumCulled = opts.cull;
     this.mesh.frustumCulled = false;

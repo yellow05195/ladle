@@ -6,15 +6,26 @@
  * never stand on the felt, never react to a result and never carry a name
  * tag. The bear waves once when a round opens and once when the viewer
  * takes a seat; otherwise he holds the clip's first frame and breathes.
+ *
+ * v21.4 (perf F3, F9): both are compiled before they are shown (attachWarm:
+ * the skinned bear's program was a 93 to 130 ms link at the end of the
+ * pull-back), and the bear's culling sphere is set once from his posed box
+ * (the engine worked it out over his bone-transformed vertices: 26 ms).
  */
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { M, castShadows, loadGLTF, normalise } from "./assets";
 import { azimuthToXZ } from "./seats";
 import { hall, hallBus, type Quality } from "./store";
+import { attachWarm } from "./warm";
+
+/** the wave lifts a paw above the rest pose's box: the culling sphere has room for it */
+const WAVE_PAD = 1.5;
 
 export function Staff({ quality }: { quality: Quality }) {
+  // (the renderer, the scene and the camera for attachWarm, read when a model lands)
+  const three = useThree((s) => s.get);
   const bear = useRef<THREE.Group>(null);
   const fox = useRef<THREE.Group>(null);
   const mixer = useRef<THREE.AnimationMixer | null>(null);
@@ -26,11 +37,13 @@ export function Staff({ quality }: { quality: Quality }) {
     let alive = true;
     loadGLTF(M("higgsfield/bear-host-5k.glb")).then((g) => {
       if (!alive || !bear.current) return;
-      const scene = g.scene;
-      const w = normalise(scene, 1.25);
+      const root = g.scene;
+      // (normalise keeps the bone-aware bounds on the skinned mesh; the wave gets room in the sphere)
+      const w = normalise(root, 1.25);
+      root.traverse((o) => { const sm = o as THREE.SkinnedMesh; if (sm.isSkinnedMesh && sm.boundingSphere) sm.boundingSphere.radius *= WAVE_PAD; });
       if (quality === "high") castShadows(w, true, false);
-      bear.current.add(w);
-      const mx = new THREE.AnimationMixer(scene);
+      void attachWarm(three(), bear.current, w);
+      const mx = new THREE.AnimationMixer(root);
       const clip = g.animations[0];
       if (clip) {
         const a = mx.clipAction(clip);
@@ -47,10 +60,10 @@ export function Staff({ quality }: { quality: Quality }) {
     loadGLTF(M("higgsfield/fox-bellhop-5k.glb")).then((g) => {
       if (!alive || !fox.current) return;
       const w = normalise(g.scene, 1.25);
-      fox.current.add(w);
+      void attachWarm(three(), fox.current, w);
     }).catch(() => {});
     return () => { alive = false; };
-  }, [quality]);
+  }, [quality, three]);
 
   useFrame((state, dt) => {
     const s = hall.get();

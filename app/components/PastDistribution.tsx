@@ -11,6 +11,15 @@
  * numerals sit under one --grid line.
  * Under it, the smallest and the largest past scoop side by side in the
  * identical style. No colour for any value, no highlight.
+ *
+ * fix:1 (T5, F14): the chart's lines and dots are drawn into a canvas
+ * under the SVG's labels. The SVG's two crispEdges lines (×1 and the axis)
+ * cost the GPU process an 80 ms raster flush the first time they were
+ * painted, on the first scroll past the chart (scrollY about 2440 on the
+ * home's tour): one 83 to 96 ms frame in every run, gone with the lines
+ * hidden (screenshots/v21/perf/ver1-f14ab.mjs). The canvas is drawn on the
+ * CPU (willReadFrequently: no GPU raster of its own) once per layout, then
+ * only composited; its edges snap to the device pixels, as crispEdges did.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getDataSource } from "../lib/data";
@@ -68,8 +77,11 @@ export function usePastScoops(when = true): PastScoops | null {
  * Beeswarm dodge (circles): values sorted ascending, each dot at its exact
  * x, at the height nearest the axis where it touches no placed dot (centres
  * at least `d` apart). Returns every dot's y offset and the extent used.
+ * v21.4: with `fit`, it gives up (null) as soon as the extent plus the dot
+ * passes the plot: the extent only grows, so that layout could never fit
+ * and the search below would throw it away.
  */
-function dodge(xs: number[], d: number): { ys: Float32Array; up: number; down: number } {
+function dodge(xs: number[], d: number, fit?: { D: number; plot: number }): { ys: Float32Array; up: number; down: number } | null {
   const ys = new Float32Array(xs.length);
   const d2 = d * d;
   let up = 0, down = 0, head = 0;
@@ -98,8 +110,99 @@ function dodge(xs: number[], d: number): { ys: Float32Array; up: number; down: n
     ys[i] = y;
     if (y > up) up = y;
     if (-y > down) down = -y;
+    if (fit && up + down + fit.D > fit.plot) return null;
   }
   return { ys, up, down };
+}
+
+export interface SwarmGeom { x: (v: number) => number; path: string; total: number; base: number; proX: number; S: number; drawn: number; dots: Float32Array }
+
+/** v21.4: the laid-out swarm per sample (its identity) and per (width, height, dot): a remount or a second chart never lays it out again. */
+const geoms = new WeakMap<number[], Map<string, SwarmGeom>>();
+
+/** The swarm's geometry for the sorted multipliers `m` (exported for perf/swarm-ab.mjs). */
+export function swarmGeom(m: number[], W: number, height: number, mark: number): SwarmGeom {
+  let per = geoms.get(m);
+  if (!per) geoms.set(m, (per = new Map()));
+  const k = `${W}|${height}|${mark}`;
+  const hit = per.get(k);
+  if (hit) return hit;
+  const pad = 6;
+  const x = (v: number) => pad + (Math.min(2, Math.max(0, v)) / 2) * (W - pad * 2);
+  const plot = height - TOP - AXIS;
+  const xs = m.map(x);
+  // the largest dot (mark … 2.5 px across, 1 px apart) whose swarm fits; at the smallest the chart grows instead
+  // (v21.4: a size that cannot fit stops at the first dot past the plot; 2.5 px is laid out in full whatever its extent)
+  let D = Math.max(2.5, mark);
+  let lay = D > 2.5 ? dodge(xs, D + 1, { D, plot }) : null;
+  while (!lay && D > 2.5) {
+    D = Math.max(2.5, D - 0.5);
+    if (D > 2.5) lay = dodge(xs, D + 1, { D, plot });
+  }
+  if (!lay) lay = dodge(xs, D + 1)!;
+  const need = Math.ceil(lay.up + lay.down + D);
+  const plotH = Math.max(plot, need);
+  const total = TOP + plotH + AXIS;
+  // centre the swarm in the plot
+  const axisY = TOP + (plotH - need) / 2 + lay.up + D / 2;
+  const r = D / 2;
+  let path = "";
+  // (the dots' centres, x then y: the canvas's; the path is the SVG's of v21.3, kept for perf/swarm-ab.mjs)
+  const dots = new Float32Array(xs.length * 2);
+  for (let i = 0; i < xs.length; i++) {
+    const cx = xs[i]!, cy = axisY - lay.ys[i]!;
+    path += `M${(cx - r).toFixed(2)} ${cy.toFixed(2)}a${r} ${r} 0 1 0 ${D} 0a${r} ${r} 0 1 0 -${D} 0`;
+    dots[i * 2] = cx; dots[i * 2 + 1] = cy;
+  }
+  const base = Math.round(TOP + plotH + 6);
+  const proX = Math.round(x(1)) + 0.5;
+  const g = { x, path, total, base, proX, S: D, drawn: xs.length, dots };
+  // a few sizes per sample (the charts on the page, a resize's last widths), not every width a window drag goes through
+  if (per.size >= 8) per.delete(per.keys().next().value!);
+  per.set(k, g);
+  return g;
+}
+
+/**
+ * The swarm's plot, on a canvas under the chart's labels, at the screen's pixel ratio, in the SVG's order: the ×1 line
+ * (2 px of --ink-4, from the label row to the axis), the dots (the --ink cream at 85 %, over the line), the axis rule
+ * (1 px of --grid). The lines' edges on the device pixels (crispEdges).
+ */
+function SwarmPlot({ g, W, h }: { g: SwarmGeom; W: number; h: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    // (development: the geometry, for the looks probe screenshots/v21/perf/fx1-swarm-looks.mjs)
+    if (process.env.NODE_ENV !== "production") (c as HTMLCanvasElement & { __geom?: SwarmGeom }).__geom = g;
+    const k = Math.min(3, window.devicePixelRatio || 1);
+    c.width = Math.round(W * k);
+    c.height = Math.round(h * k);
+    // (willReadFrequently: a canvas Chrome draws on the CPU, uploaded once, never rastered on the GPU)
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+    ctx.clearRect(0, 0, W, h);
+    const css = getComputedStyle(c);
+    const token = (name: string, or: string) => css.getPropertyValue(name).trim() || or;
+    // (a CSS coordinate on the device pixels' grid)
+    const snap = (v: number) => Math.round(v * k) / k;
+    // the ×1 line: the SVG's x = proX - 0.5, 2 px wide, butt ends at TOP and the axis
+    const lx = snap(g.proX - 1.5);
+    ctx.fillStyle = token("--ink-4", "#6E6053");
+    ctx.fillRect(lx, snap(TOP), snap(g.proX + 0.5) - lx, snap(g.base) - snap(TOP));
+    const r = g.S / 2, d = g.dots;
+    ctx.fillStyle = token("--ink", "#F6EEE3");
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    for (let i = 0; i < d.length; i += 2) { ctx.moveTo(d[i]! + r, d[i + 1]!); ctx.arc(d[i]!, d[i + 1]!, r, 0, Math.PI * 2); }
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // the axis rule: the SVG's y = base + 0.5, 1 px, the box's whole width
+    ctx.fillStyle = token("--grid", "rgba(246, 238, 227, 0.07)");
+    ctx.fillRect(0, snap(g.base), W, snap(g.base + 1) - snap(g.base));
+  }, [g, W, h]);
+  return <canvas ref={ref} aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, width: W, height: h, pointerEvents: "none" }} />;
 }
 
 export function Swarm({ s, height = H, mark = 6, brief = false }: { s: PastScoops | null; height?: number; mark?: number; brief?: boolean }) {
@@ -114,50 +217,23 @@ export function Swarm({ s, height = H, mark = 6, brief = false }: { s: PastScoop
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const g = useMemo(() => {
-    if (!s || W < 40) return null;
-    const pad = 6;
-    const x = (v: number) => pad + (Math.min(2, Math.max(0, v)) / 2) * (W - pad * 2);
-    const plot = height - TOP - AXIS;
-    const xs = s.m.map(x);
-    // the largest dot (mark … 2.5 px across, 1 px apart) whose swarm fits; at the smallest the chart grows instead
-    let D = Math.max(2.5, mark), lay = dodge(xs, D + 1);
-    for (; D > 2.5; D = Math.max(2.5, D - 0.5)) {
-      lay = dodge(xs, D + 1);
-      if (lay.up + lay.down + D <= plot) break;
-    }
-    if (D <= 2.5) lay = dodge(xs, D + 1);
-    const need = Math.ceil(lay.up + lay.down + D);
-    const plotH = Math.max(plot, need);
-    const total = TOP + plotH + AXIS;
-    // centre the swarm in the plot
-    const axisY = TOP + (plotH - need) / 2 + lay.up + D / 2;
-    const r = D / 2;
-    let path = "";
-    for (let i = 0; i < xs.length; i++) {
-      const cx = xs[i]!, cy = axisY - lay.ys[i]!;
-      path += `M${(cx - r).toFixed(2)} ${cy.toFixed(2)}a${r} ${r} 0 1 0 ${D} 0a${r} ${r} 0 1 0 -${D} 0`;
-    }
-    const base = Math.round(TOP + plotH + 6);
-    const proX = Math.round(x(1)) + 0.5;
-    return { x, path, total, base, proX, S: D, drawn: xs.length };
-  }, [s, W, height, mark]);
+  const g = useMemo(() => (!s || W < 40 ? null : swarmGeom(s.m, W, height, mark)), [s, W, height, mark]);
   if (process.env.NODE_ENV !== "production" && g && s && g.drawn !== s.n) console.error(`Swarm drew ${g.drawn} of ${s.n} scoops`);
   const h = g?.total ?? height;
   return (
     <div className={`pg-swarm ${brief ? "brief" : ""}`}>
       <div ref={box} className="pg-swarm-box" style={{ height: h }} aria-busy={s ? undefined : true}>
         {g && s ? (
-          <svg width={W} height={h} viewBox={`0 0 ${W} ${h}`} role="img" aria-label={`${P.odds.aria}. ${fill(P.odds.sample, { n: s.n, k: s.rounds })}`} data-dots={g.drawn} data-mark={g.S}>
-            <text x={g.proX} y={15} textAnchor="middle" className="lbl">{P.odds.proRata}</text>
-            <line x1={g.proX - 0.5} x2={g.proX - 0.5} y1={TOP} y2={g.base} stroke="var(--ink-4)" strokeWidth={2} shapeRendering="crispEdges" />
-            <path d={g.path} fill="var(--ink)" fillOpacity={0.85} />
-            <line x1={0} x2={W} y1={g.base + 0.5} y2={g.base + 0.5} stroke="var(--grid)" strokeWidth={1} shapeRendering="crispEdges" />
-            {[0, 0.5, 1, 1.5, 2].map((v) => {
-              const tx = Math.round(g.x(v)) + 0.5;
-              return <text key={v} x={v === 0 ? 0 : v === 2 ? W : tx} y={g.base + 20} textAnchor={v === 0 ? "start" : v === 2 ? "end" : "middle"} className="ax">{`×${v}`}</text>;
-            })}
-          </svg>
+          <>
+            <SwarmPlot g={g} W={W} h={h} />
+            <svg width={W} height={h} viewBox={`0 0 ${W} ${h}`} role="img" aria-label={`${P.odds.aria}. ${fill(P.odds.sample, { n: s.n, k: s.rounds })}`} data-dots={g.drawn} data-mark={g.S} style={{ position: "relative" }}>
+              <text x={g.proX} y={15} textAnchor="middle" className="lbl">{P.odds.proRata}</text>
+              {[0, 0.5, 1, 1.5, 2].map((v) => {
+                const tx = Math.round(g.x(v)) + 0.5;
+                return <text key={v} x={v === 0 ? 0 : v === 2 ? W : tx} y={g.base + 20} textAnchor={v === 0 ? "start" : v === 2 ? "end" : "middle"} className="ax">{`×${v}`}</text>;
+              })}
+            </svg>
+          </>
         ) : null}
       </div>
       {s && !brief ? <p className="fine">{fill(P.odds.sample, { n: s.n.toLocaleString("en-US"), k: s.rounds })}</p> : null}

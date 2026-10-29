@@ -19,26 +19,33 @@
  * later rounds never take it away. A round the viewer only watched is a
  * stub with Open for the hold (the chat has the house line), so a seated
  * player never loses the countdown to someone else's result.
+ *
+ * v21.4 (perf): the room renders when the round's frame changes (sameFrame:
+ * its phase, the viewer's entry, the halt, the result), never on a slot or an
+ * arrival. The countdown, the stem, the facts, the dock's cap and the chat
+ * read their own slices of the live window (LiveFigures, Dock, LiveChat).
  */
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BRAND } from "../../../../config/brand";
 import { useT } from "../../../i18n/client";
-import type { LiveWindow } from "../../../lib/data/types";
+import type { Halt, LiveWindow, ScoopOutcome, SettlementView } from "../../../lib/data/types";
 import { setChatSeat } from "../../../lib/chat";
 import { scarfHex } from "../../../lib/profile";
-import { useRoundChat } from "../../game/useRoundChat";
+import { chatMem, useRoundChat, type ChatMem } from "../../game/useRoundChat";
 import type { GameFacts } from "../../game/types";
-import { useLive } from "../../live/LiveProvider";
-import { Mark, RollingFigure, StateTag, Stem } from "../../ui/house";
+import { useLiveActions, useLiveSelect, useLiveStatus } from "../../live/LiveProvider";
+import { Mark, StateTag } from "../../ui/house";
 import { useProfile } from "../profile/ProfileProvider";
 import { hall, useHall } from "../store";
-import { ladle, mult, roundNum, sol2 } from "../fmt";
+import { ladle, mult, roundNum } from "../fmt";
 import { Dock, dockState } from "./Dock";
 import { Instruments } from "./Instruments";
-import { ResultSheet } from "./ResultPanel";
+import { BackStub, LeftStub, ResultSheet } from "./ResultPanel";
 import { RoomChat } from "./RoomChat";
-import { entryRound, phaseWord, roundView, slotsLeft, stateWord, useMedia } from "./round";
+import { entryRound, haltLine, roundView, stateWord, useMedia } from "./round";
+import { LiveStem, OpenLine, PotPlayers, StripCount } from "./LiveFigures";
+import { ChainDown } from "./ChainDown";
 import { AMOUNTS } from "./StakeSelector";
 import { TicketStub } from "./TicketStub";
 import { TopBar } from "./TopBar";
@@ -63,6 +70,67 @@ function framing(embed: boolean, sheetUp: boolean): { viewShift: number; viewLif
   return { viewShift: W >= 1024 ? (chat - instr) / (2 * W) : 0, viewLift: W >= 1024 ? 28 : 0 };
 }
 
+/*
+ * v21.4 (perf): the room's frame of the live window: what decides its layout, its lines, its keys and its results. Two
+ * snapshots with the same frame are the same to the room, which keeps the earlier one and does not re-render; the
+ * slots left, the players and the pot move every slot and every arrival, and those are the LiveFigures' own.
+ */
+const frameOf = (x: LiveWindow | null) => x;
+const sameHalt = (a?: Halt | null, b?: Halt | null) => (!a && !b) || (!!a && !!b && a.kind === b.kind && a.round === b.round && a.late === b.late && a.stalled === b.stalled);
+function sameSettlement(a: SettlementView | null, b: SettlementView | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.tokensOut === b.tokensOut && a.platformFee === b.platformFee && a.hostFee === b.hostFee && a.toCurve === b.toCurve && a.myMultiplier === b.myMultiplier
+    && a.myShare === b.myShare && a.mySellBack === b.mySellBack && a.curveAfter.x === b.curveAfter.x && a.curveAfter.y === b.curveAfter.y;
+}
+function sameList<T>(a: T[] | undefined, b: T[] | undefined, eq: (x: T, y: T) => boolean): boolean {
+  if (a === b) return true;
+  if ((a?.length ?? 0) !== (b?.length ?? 0)) return false;
+  return (a ?? []).every((x, i) => eq(x, b![i]!));
+}
+function sameOutcomes(a?: Record<string, ScoopOutcome>, b?: Record<string, ScoopOutcome>): boolean {
+  if (a === b) return true;
+  const ka = Object.keys(a ?? {});
+  if (ka.length !== Object.keys(b ?? {}).length) return false;
+  return ka.every((k) => { const x = a![k]!, y = b?.[k]; return !!y && x.kind === y.kind && x.tokens === y.tokens && x.sol === y.sol; });
+}
+function sameFrame(a: LiveWindow | null, b: LiveWindow | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.id === b.id && a.phase === b.phase && a.source === b.source && a.mineIndex === b.mineIndex
+    && a.slotsTotal === b.slotsTotal && a.slotMs === b.slotMs && a.capBps === b.capBps && a.hostFeeBps === b.hostFeeBps
+    && a.seedHex === b.seedHex && a.soldFor === b.soldFor
+    // an open round's arrivals are the figures' and the chat's; once it takes no more, its list is the result's
+    && (a.phase === "open" || a.entries.length === b.entries.length)
+    && a.sibling?.id === b.sibling?.id && a.sibling?.phase === b.sibling?.phase
+    && sameHalt(a.halt, b.halt) && sameSettlement(a.settlement, b.settlement)
+    && sameList(a.scoopsLeft, b.scoopsLeft, (x, y) => x.id === y.id && x.tokens === y.tokens && x.sellBack === y.sellBack)
+    && sameList(a.stakesBack, b.stakesBack, (x, y) => x.id === y.id && x.amount === y.amount)
+    && sameOutcomes(a.outcomes, b.outcomes);
+}
+/** The chat's frame: the room's and every arrival (the round's notice counts them, the commands read the pot). */
+const sameChat = (a: LiveWindow | null, b: LiveWindow | null) => sameFrame(a, b) && (!a || !b || (a.entries.length === b.entries.length && a.total === b.total));
+
+/**
+ * v21.4 (perf): the round chat reads the live window itself (each arrival is its notice's count), so the room around it
+ * re-renders only with the round's frame. Its memory is the room's: a switch between the phone and desk layouts remounts
+ * it and keeps the log.
+ */
+const LiveChat = memo(function LiveChat({ mem, facts, enter, sellBack, seated, myName, myScarf, onSeat, serving, variant = "desk" }: {
+  mem: ChatMem; facts: GameFacts; enter: (lamports: bigint) => void; sellBack: () => void; seated: boolean; myName?: string; myScarf?: string;
+  onSeat: () => void; serving: boolean; variant?: "desk" | "phone";
+}) {
+  const t = useT();
+  const { source } = useLiveActions();
+  const w = useLiveSelect(frameOf, { equal: sameChat });
+  const { msgs, send } = useRoundChat({ w, source, enter, sellBack, facts, t, seated, myName, onSeat, serving, mem });
+  // one stable function for the memoised chat (send changes with every snapshot)
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const sendRound = useCallback((text: string) => sendRef.current(text), []);
+  return <RoomChat msgs={msgs} sendRound={sendRound} myName={myName ?? ""} myScarf={myScarf} variant={variant} />;
+});
+
 function EmbedHead() {
   return (
     <header className="embed-head">
@@ -77,8 +145,9 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
   const params = useSearchParams();
   const watch = params.get("watch") === "1";
   const host = params.get("host");
-  const live = useLive();
-  const { w, source } = live;
+  const w = useLiveSelect(frameOf, { equal: sameFrame });
+  const actions = useLiveActions();
+  const { failed, error } = useLiveStatus();
   const { profile, pubkey, takeSeat } = useProfile();
   const reveal = useHall((s) => s.reveal);
   const reduced = useHall((s) => s.reduced);
@@ -128,8 +197,10 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
     return () => { window.removeEventListener("resize", set); hall.set({ viewShift: 0, viewLift: 0 }); };
   }, [embed, sheetUp]);
 
-  // phones and the embed: the drum in the hall band
+  // phones and the embed: the drum in the hall band (measured again once the first snapshot, or the down plate, renders the band:
+  // the chain source answers after the first render)
   const band = useRef<HTMLDivElement>(null);
+  const hasRound = !!w;
   useLayoutEffect(() => {
     if (!compact || !mounted) { hall.set({ visibleTop: 0, visibleH: 0 }); return; }
     const put = () => { const r = band.current?.getBoundingClientRect(); if (r) hall.set({ visibleTop: Math.round(r.top), visibleH: Math.round(r.bottom) }); };
@@ -138,7 +209,7 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
     if (band.current) ro.observe(band.current);
     window.addEventListener("resize", put);
     return () => { ro.disconnect(); window.removeEventListener("resize", put); hall.set({ visibleTop: 0, visibleH: 0 }); };
-  }, [compact, mounted]);
+  }, [compact, mounted, hasRound, failed]);
 
   // 768-1023: the chat drawer sits above the dock, whatever the dock's height
   const dockRO = useRef<{ ro: ResizeObserver; el: Element | null } | null>(null);
@@ -169,29 +240,34 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
 
   const enterNow = useCallback(async (lamports: bigint) => {
     const cur = wRef.current;
-    if (!entryRound(cur, { serving: myServeRef.current })) { setReason(t("h.reason.sealed", { slots: cur?.slotsTotal ?? 92 })); return; }
+    const into = entryRound(cur, { serving: myServeRef.current });
+    if (!into) {
+      // chain: no round takes entries (the halt line says why), else the round sealed
+      setReason(cur?.halt ? haltLine(t, cur.halt, cur.slotMs, cur.slotsTotal) : t("h.reason.sealed", { slots: cur?.slotsTotal ?? 92 }));
+      return;
+    }
+    const target = roundNum(into);
     setBusy(true); setReason(null);
     try {
-      await live.enter(lamports);
+      await actions.enter(lamports);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (/reject|denied|cancel|declin/i.test(msg)) setReason(t("h.reason.declined"));
       else if (/seal/i.test(msg)) setReason(t("h.reason.sealed", { slots: cur?.slotsTotal ?? 92 }));
+      // chain: the close slot passed while the wallet was open (the program refuses entries from it)
+      else if (/closed to new entries|no open window|no round is open/i.test(msg)) setReason(t("h.reason.closed", { n: target }));
       else setReason(t("h.reason.other"));
     } finally { setBusy(false); }
-  }, [live, t]);
+  }, [actions, t]);
 
   const chatEnter = useCallback((lamports: bigint) => {
-    const max = live.maxEntry();
+    const max = actions.maxEntry();
     const a = lamports > max ? max : lamports;
     setAmount(a);
     void enterNow(a);
-  }, [live, enterNow]);
-  const { msgs, send } = useRoundChat({ w, source, enter: chatEnter, sellBack: () => { void live.sellBack(); }, facts, t, seated, myName: profile?.nickname, onSeat: takeSeat, serving: myServe });
-  // one stable function for the memoised chat (send changes with every snapshot)
-  const sendRef = useRef(send);
-  sendRef.current = send;
-  const sendRound = useCallback((text: string) => sendRef.current(text), []);
+  }, [actions, enterNow]);
+  const chatSell = useCallback(() => { void actions.sellBack(); }, [actions]);
+  const [mem] = useState(chatMem);
 
   // the result: once every ball has landed (400 ms after the tags change, the same for every result), the sheet
   // rises for a round the viewer played; a round they only watched becomes a stub with Open for the hold
@@ -228,9 +304,7 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
   }, [w, settled, revealed, result, myResult, spect, reduced]);
 
   // folding: the sheet goes (the viewer's own result keeps its stub); the hall follows the live rounds again
-  // stable across snapshots (the live context changes on every one), so the hold below is not restarted by them
-  const liveRef = useRef(live);
-  liveRef.current = live;
+  // stable across snapshots, so the hold below is not restarted by them
   const fold = useCallback(() => {
     setSheet(false);
     setAuto(false);
@@ -239,8 +313,8 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
     closedFor.current = r.id;
     setResult(null);
     const cur = wRef.current;
-    if (cur && cur.id === r.id) liveRef.current.release();
-  }, []);
+    if (cur && cur.id === r.id) actions.release();
+  }, [actions]);
   // the hold, the same for every result; a reader at work on the sheet (pointer, focus, confirm, share) keeps it up
   useEffect(() => {
     if (!sheet || !auto) return;
@@ -249,7 +323,8 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
       const el = document.querySelector(".rsheet");
       // (hover only where there is one: a touch screen keeps :hover on the last tapped element)
       const hover = window.matchMedia("(hover: hover)").matches && !!el?.matches(":hover");
-      const reading = !!document.getElementById("share-title") || !!el?.querySelector(".confirm") || hover || !!el?.matches(":focus-within");
+      // (a key at work: the wallet is open for a take or a sell back)
+      const reading = !!document.getElementById("share-title") || !!el?.querySelector(".confirm, .busy") || hover || !!el?.matches(":focus-within");
       if (reading) { id = window.setTimeout(tick, 2000); return; }
       fold();
     };
@@ -262,7 +337,25 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
   }, [w, sheet, result]);
   const openSheet = useCallback((x: LiveWindow) => { setResult(x); setSheet(true); setAuto(false); setSpect((s) => (s && s.id === x.id ? null : s)); }, []);
 
-  if (!mounted || !w) return null;
+  if (!mounted) return null;
+  if (!w) {
+    // chain: rounds cannot be read (configuration, a missing market, the RPC down): say so instead of an empty room
+    if (!failed) return null;
+    return compact ? (
+      <>
+        {embed ? <EmbedHead /> : <TopBar room />}
+        <div className="pplay">
+          <div ref={band} className="hall-band" aria-hidden="true" />
+          <div className="plow"><ChainDown error={error} phone /></div>
+        </div>
+      </>
+    ) : (
+      <>
+        {embed ? <EmbedHead /> : <TopBar room />}
+        <div className="hud-root"><ChainDown error={error} /></div>
+      </>
+    );
+  }
   const myScarf = profile ? scarfHex(profile.scarf) : undefined;
   // the viewer's entry in the focused round, from the entry until its result is out
   const mine = w.mineIndex !== null && (w.phase === "open" || w.phase === "sealed" || w.phase === "seeded" || myServe) ? w.entries[w.mineIndex] : undefined;
@@ -270,16 +363,15 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
   // rounds are pipelined: the dial may already count the next round while the viewer's own one draws
   const followsOther = r.id !== w.id;
   const stubTop = !!mine && followsOther;
-  const stub = mine ? <TicketStub n={roundNum(w.id)} entry={mine} hostBps={w.hostFeeBps} phone={compact} state={w.phase === "open" ? undefined : stateWord(t, w.phase)} /> : null;
+  const stub = mine ? <TicketStub n={roundNum(w.id)} entry={mine} hostBps={w.hostFeeBps} phone={compact} state={w.phase === "open" ? undefined : stateWord(t, w.phase, w.halt?.kind === "closing" && w.halt.round === w.id ? w.halt : null)} /> : null;
   const canEnter = !!entryRound(w, { serving: myServe });
   const ds = myServe ? "none" : dockState(w, seated, canEnter);
   const showSheet = sheet && !!result;
-  const max = live.maxEntry();
   // phones: while the cream strip shows, it is the one line about the viewer's entry (no dock line repeating it)
   const dock = compact && stub ? null : myServe ? (
     <section className={compact ? "pdock" : "dock hud-pane hud-in"}><p className="line soft" role="status"><span className="me-dot" aria-hidden="true" /><span>{t("h.dock.serving", { n: roundNum(w.id) })}</span></p></section>
   ) : (
-    <Dock w={w} state={ds} amount={amount} setAmount={setAmount} max={max} busy={busy} reason={reason} setReason={setReason} onScoop={() => void enterNow(amount)} onSeat={takeSeat} host={host} phone={compact} />
+    <Dock w={w} state={ds} amount={amount} setAmount={setAmount} busy={busy} reason={reason} setReason={setReason} onScoop={() => void enterNow(amount)} onSeat={takeSeat} host={host} phone={compact} />
   );
 
   // the focused round when the dial follows its open sibling (one line; the receipt says it when the round is the viewer's)
@@ -299,11 +391,17 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
       foldOpen = spect;
     }
   }
-  const openLine = r.phase === "open" ? t("h.room.openLine", { n: r.n, phase: phaseWord(t, r.phase, r.total), left: slotsLeft(t, r.left) }) : `${t("h.room.roundNo", { n: r.n })} · ${phaseWord(t, r.phase, r.total)}`;
-  const results = showSheet ? <ResultSheet w={result!} myScarf={myScarf} live={result!.id === w.id} head={openLine} onClose={fold} /> : null;
+  // the live round in one line over the sheet (its own slice: the slots left move every slot)
+  const results = showSheet ? <ResultSheet w={result!} myScarf={myScarf} live={result!.id === w.id} head={<OpenLine />} onClose={fold} /> : null;
+  const chat = <LiveChat mem={mem} facts={facts} enter={chatEnter} sellBack={chatSell} seated={seated} myName={profile?.nickname} myScarf={myScarf} onSeat={takeSeat} serving={myServe} variant={compact ? "phone" : "desk"} />;
+  // chain: the viewer's scoops still in the program from rounds whose result is not on screen (the round in focus and the
+  // folded result have their own sheet, with the same take key)
+  const leftOver = (w.scoopsLeft ?? []).filter((x) => x.id !== w.id && x.id !== foldOpen?.id && !(showSheet && x.id === result!.id));
+  // chain: stakes waiting in rounds that were not drawn (the round in focus included: it has no result to show)
+  const back = w.stakesBack ?? [];
 
   if (compact) {
-    // one 36 px row under the stem: the viewer's own result first, then what the hall is drawing, then a watched round
+    // one 36 px row under the stem: the viewer's own result first, then what the hall is drawing, then a watched round, then a scoop left in the program
     const row = foldOpen && foldOpen === myResult
       ? { text: foldText!, open: foldOpen }
       : note ? { text: note, open: null }
@@ -313,20 +411,20 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
         {embed ? <EmbedHead /> : <TopBar room />}
         <div className="pplay">
           <div className="strip">
-            <div className="l"><b>{t("h.room.roundNo", { n: r.n })}</b><StateTag word={stateWord(t, r.phase)} /></div>
-            <div className="c"><RollingFigure text={String(r.left)} className="num-dial" mode="swap" /><span className="label">{t(r.left === 1 ? "h.dial.shortOne" : "h.dial.short")}</span></div>
-            <div className="r"><span className="num-m"><RollingFigure text={sol2(r.pot)} /><span className="unit">SOL</span></span><span className="label">{t(r.players === 1 ? "h.room.phonePotOne" : "h.room.phonePot", { players: r.players })}</span></div>
+            <div className="l"><b>{t("h.room.roundNo", { n: r.n })}</b><StateTag word={stateWord(t, r.phase, r.halt)} /></div>
+            <div className="c"><StripCount /></div>
+            <div className="r"><PotPlayers /></div>
           </div>
-          <div className="stem-wrap"><Stem elapsed={r.elapsed} total={r.total} thin /></div>
+          <div className="stem-wrap"><LiveStem thin /></div>
           {row ? (
             <div className="pnote" aria-live="polite">
               <span className="t">{row.text}</span>
               {row.open ? <button type="button" className="key sec xs" onClick={() => openSheet(row.open!)}>{t("h.rs.open")}</button> : null}
             </div>
-          ) : null}
+          ) : back.length ? <BackStub back={back} phone /> : leftOver.length ? <LeftStub left={leftOver} phone /> : null}
           <div ref={band} className="hall-band" aria-hidden="true" />
           <div className="plow">
-            {!embed ? <RoomChat msgs={msgs} sendRound={sendRound} myName={profile?.nickname ?? ""} myScarf={myScarf} variant="phone" /> : null}
+            {!embed ? chat : null}
             {stub ? <div className="pdock pstub">{stub}</div> : null}
             {dock}
           </div>
@@ -336,14 +434,17 @@ export function RoomHud({ facts, embed = false }: { facts: GameFacts; embed?: bo
     );
   }
   const folded = foldText && foldOpen ? (
-    <div className="rs-stub" aria-live="polite"><span>{foldText}</span><button type="button" className="key sec s" onClick={() => openSheet(foldOpen!)}>{t("h.rs.open")}</button></div>
-  ) : null;
+    <>
+      <div className="rs-stub" aria-live="polite"><span>{foldText}</span><button type="button" className="key sec s" onClick={() => openSheet(foldOpen!)}>{t("h.rs.open")}</button></div>
+      {back.length ? <BackStub back={back} /> : leftOver.length ? <LeftStub left={leftOver} /> : null}
+    </>
+  ) : back.length ? <BackStub back={back} /> : leftOver.length ? <LeftStub left={leftOver} /> : null;
   return (
     <>
       {embed ? <EmbedHead /> : <TopBar room />}
       <div className="hud-root">
-        {!embed ? <RoomChat msgs={msgs} sendRound={sendRound} myName={profile?.nickname ?? ""} myScarf={myScarf} /> : null}
-        <Instruments w={w} transient={null} note={note} stub={stub} stubTop={stubTop} folded={folded} />
+        {!embed ? chat : null}
+        <Instruments capBps={w.capBps} transient={null} note={note} stub={stub} stubTop={stubTop} folded={folded} />
         {dock}
         {results}
       </div>
