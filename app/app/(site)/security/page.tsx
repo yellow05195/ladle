@@ -10,6 +10,7 @@ import { Arr, DefList, Notes, PageHead, Sec, SecHead, Steps } from "../../../com
 import { P } from "../../../components/hall/sections/copy";
 import { TableWrap } from "../../../components/TableWrap";
 import { PageIndex } from "../../../components/PageIndex";
+import { HallWindow, Peek, Presenter } from "../../../components/site/Deco";
 
 export const metadata: Metadata = { title: "Security" };
 
@@ -114,7 +115,9 @@ export default async function SecurityPage() {
             <p className="body">{t("h.sec.statusIntro").replace(/.$/, "")}, as of {reviewed}.</p>
           </div>
           <div className="c8 pg-col pg-col-r">
-            <DefList text rows={status.map((s) => ({ key: s.k, k: s.k, v: <span className="pg-dd-row"><span>{s.v}</span><a className="pg-a" href={s.href} target="_blank" rel="noreferrer">{s.to}<Arr c="↗" /></a></span> }))} />
+            <Peek pets={[["polar", "sky"], ["panda", "tomato"]]} size={92}>
+              <DefList text rows={status.map((s) => ({ key: s.k, k: s.k, v: <span className="pg-dd-row"><span>{s.v}</span><a className="pg-a" href={s.href} target="_blank" rel="noreferrer">{s.to}<Arr c="↗" /></a></span> }))} />
+            </Peek>
           </div>
         </div>
       </Sec>
@@ -153,6 +156,7 @@ export default async function SecurityPage() {
               <div className="pg-fact"><span className="num-m">{lat.value.p99S}<span className="unit">s</span></span><span className="label">{t("arrives.p99")}</span></div>
             </div>
             <p className="fine">{t("about.refundP", { slots: formatInt(timeout.value, locale), min: timeoutMin })}</p>
+            <HallWindow src="seal" />
           </div>
           <div className="c8 pg-col pg-col-r">
             <CodeBlock code={formula} />
@@ -215,6 +219,7 @@ export default async function SecurityPage() {
           <div className="c4 pg-col">
             <SecHead n={8} id="ck-h">{dot(t("checks.title"))}</SecHead>
             <p className="body">{t("checks.sub")}</p>
+            <Presenter pet={["bee", "mint"]} flip />
           </div>
           <div className="c8 pg-col pg-col-r">
             <ol className="pg-checks">

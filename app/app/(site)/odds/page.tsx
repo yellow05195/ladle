@@ -8,6 +8,7 @@ import { formatInt, formatPct } from "../../../lib/format";
 import { g3Deciles, g3Tolerance, g3TotalWindows, rollMax, slotMs } from "../../../lib/measurements";
 import { GITHUB_G3 } from "../../../lib/links";
 import { TableWrap } from "../../../components/TableWrap";
+import { HallWindow, HeadCast, Peek, Presenter } from "../../../components/site/Deco";
 
 export const metadata: Metadata = { title: "Odds" };
 
@@ -33,7 +34,9 @@ export default async function OddsPage() {
 
   return (
     <>
-      <PageHead label={o.label} title={o.title} lede={o.lede} />
+      <PageHead label={o.label} title={o.title} lede={o.lede}>
+        <HeadCast pets={[["bee", "saffron"], ["koala", "sky"], ["penguin", "tomato"]]} />
+      </PageHead>
 
       <Sec id="law" labelledBy="law-h">
         <div className="pg-split">
@@ -53,9 +56,11 @@ export default async function OddsPage() {
 
       <Sec id="past" labelledBy="past-h">
         <SecHead n={1} id="past-h">{o.swarmTitle}</SecHead>
-        <div className="plate pg-chart">
-          <PastDistribution />
-        </div>
+        <Peek pets={[["panda", "mint"], ["bunny", "plum"], ["elephant", "teal"]]}>
+          <div className="plate pg-chart">
+            <PastDistribution />
+          </div>
+        </Peek>
         <DemoNote />
       </Sec>
 
@@ -64,6 +69,7 @@ export default async function OddsPage() {
           <div className="c4 pg-col">
             <SecHead n={2} id="sim-h">{o.simTitle}</SecHead>
             <p className="body">{o.simBody}</p>
+            <Presenter pet={["polar", "saffron"]} flip />
           </div>
           <div className="c8 pg-col pg-col-r"><Simulator /></div>
         </div>
@@ -75,6 +81,7 @@ export default async function OddsPage() {
             <SecHead n={3} id="tbl-h">{o.tableTitle}</SecHead>
             <p className="body">{fill(o.tableBody, { n: formatInt(total.value, locale), tol: formatPct(tol.value, 1).replace("%", " %") })}</p>
             <div><a className="act" href={GITHUB_G3} target="_blank" rel="noreferrer">{t("odds.readG3")}<Arr c="↗" /></a></div>
+            <HallWindow src="draw" />
           </div>
           <div className="c8 pg-col pg-col-r">
             <TableWrap>

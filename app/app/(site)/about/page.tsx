@@ -6,6 +6,7 @@ import { P } from "../../../components/hall/sections/copy";
 import { Faq } from "../../../components/fx/Faq";
 import { formatInt } from "../../../lib/format";
 import { maxHostFeeBps, platformFeeBps } from "../../../lib/measurements";
+import { HallWindow, Peek, Presenter } from "../../../components/site/Deco";
 
 export const metadata: Metadata = { title: "About" };
 
@@ -40,10 +41,12 @@ export default async function AboutPage() {
             </div>
           </div>
           <div className="c5 pg-col pg-col-r">
-            <div className="plate-cream pg-cream">
-              <span className="label">{a.houseT}</span>
-              <p>{a.houseB}</p>
-            </div>
+            <Peek pets={[["fox", "saffron"], ["pig", "plum"], ["cow", "sky"]]} at="left" size={88}>
+              <div className="plate-cream pg-cream">
+                <span className="label">{a.houseT}</span>
+                <p>{a.houseB}</p>
+              </div>
+            </Peek>
           </div>
         </div>
       </Sec>
@@ -53,6 +56,7 @@ export default async function AboutPage() {
           <div className="c4 pg-col">
             <SecHead n={2} id="sol-h">{a.solTitle}</SecHead>
             <div><Link className="act" href="/security">{a.status}<Arr /></Link></div>
+            <HallWindow src="join" />
           </div>
           <div className="c8 pg-col pg-col-r">
             <div className="plate pg-rows in-plate">
@@ -67,6 +71,7 @@ export default async function AboutPage() {
           <div className="c4 pg-col">
             <SecHead n={3} id="qa-h">{a.qaTitle}</SecHead>
             <p className="body">{a.qaIntro}</p>
+            <Presenter pet={["koala", "mint"]} flip />
           </div>
           <div className="c8 pg-col pg-col-r">
             <Faq items={questions} id="faq-all" />

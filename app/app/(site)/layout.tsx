@@ -1,4 +1,5 @@
 import "../site.css";
+import "../deco.css";
 import { TopBar } from "../../components/hall/hud/TopBar";
 import { SiteFooter } from "../../components/SiteFooter";
 import { ScrollRefresh } from "../../components/motion/ScrollRefresh";

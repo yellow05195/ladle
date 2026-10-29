@@ -1,0 +1,47 @@
+/*
+ * The house's characters on the inner pages (v25.1, components/site/Deco.tsx). Each stands on a soft floor shadow
+ * and breathes 3 px on its own phase; nothing moves under reduced motion. They never sit over copy: the page head's
+ * cast takes the free right end of the head (wide screens only), peekers stand behind the block they wrap, a
+ * presenter and a window sit under a column's copy.
+ */
+
+.dc-pet { position: relative; display: inline-block; flex: none; width: var(--s); height: var(--s); animation: dc-breathe 5.6s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -1.37s); }
+.dc-pet img { position: relative; z-index: 1; display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.28)); }
+.dc-pet[data-flip] img { transform: scaleX(-1); }
+/* the floor shadow, under the feet (it stays put while the character breathes: it is counter-moved) */
+.dc-pet::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: 3%; height: 10%; border-radius: 50%; background: radial-gradient(closest-side, rgb(0 0 0 / 0.5), rgb(0 0 0 / 0)); animation: dc-shadow 5.6s ease-in-out infinite; animation-delay: inherit; }
+@keyframes dc-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes dc-shadow { 0%, 100% { transform: translateY(0) scaleX(1); opacity: 1; } 50% { transform: translateY(3px) scaleX(0.92); opacity: 0.8; } }
+@media (prefers-reduced-motion: reduce) { .dc-pet, .dc-pet::after { animation: none; } }
+
+/* the page head's cast: at the head's right end, standing on a disc of the hall's felt (HallScene's felt, its brass rim) */
+.pg-head > .in { position: relative; }
+.dc-head { position: absolute; right: var(--gutter); bottom: 44px; display: flex; align-items: flex-end; padding: 0 28px 10px; pointer-events: none; isolation: isolate; }
+.dc-head::before { content: ""; position: absolute; z-index: -1; left: 0; right: 0; bottom: -6px; height: 44px; border-radius: 50%; background: radial-gradient(ellipse at 50% 40%, #1D4A42 0%, #12352F 55%, #0E2722 100%); box-shadow: 0 0 0 2px rgb(201 154 75 / 0.55), 0 14px 30px rgb(0 0 0 / 0.5), inset 0 -6px 12px rgb(0 0 0 / 0.35); }
+.dc-head .dc-pet + .dc-pet { margin-left: -22px; }
+.dc-head .dc-pet::after { bottom: 6%; }
+/* narrower: under the lede, in the flow (the head is a grid: it takes its own row), smaller */
+@media (max-width: 1199px) {
+  .dc-head { position: relative; right: auto; bottom: auto; margin: 14px 0 0 -6px; padding: 0 18px 8px; transform: none; }
+  .dc-head .dc-pet { width: calc(var(--s) * 0.6); height: calc(var(--s) * 0.6); }
+  .dc-head .dc-pet + .dc-pet { margin-left: -12px; }
+  .dc-head::before { height: 30px; bottom: -4px; }
+}
+
+/* peekers: behind the block, their lower part hidden by its top edge */
+.dc-peek-wrap { position: relative; }
+.dc-peek { position: absolute; top: 0; display: flex; align-items: flex-end; transform: translateY(-66%); pointer-events: none; }
+.dc-peek.right { right: 36px; }
+.dc-peek.left { left: 36px; }
+.dc-peek .dc-pet + .dc-pet { margin-left: -10px; }
+.dc-peek-body { position: relative; z-index: 1; }
+@media (max-width: 767px) { .dc-peek { transform: translateY(-62%) scale(0.66); } .dc-peek.right { right: 12px; transform-origin: right bottom; } .dc-peek.left { left: 12px; transform-origin: left bottom; } }
+
+/* a presenter under a column's copy */
+.dc-present { margin-top: 26px; line-height: 0; }
+@media (max-width: 1023px) { .dc-present { display: none; } }
+
+/* a window onto the hall, framed like the room's plates */
+.dc-window { margin: 28px 0 0; max-width: 360px; padding: 6px; border-radius: var(--r-plate); background: var(--ground-3); box-shadow: 0 20px 44px rgb(0 0 0 / 0.42); }
+.dc-window img { display: block; width: 100%; height: auto; border-radius: calc(var(--r-plate) - 6px); }
+@media (max-width: 1023px) { .dc-window { display: none; } }

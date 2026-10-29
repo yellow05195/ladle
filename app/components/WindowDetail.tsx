@@ -35,6 +35,7 @@ import { RecentWindows } from "./RecentWindows";
 import { TableWrap } from "./TableWrap";
 import { fill, P } from "./hall/sections/copy";
 import { Arr, DefList, DemoNote, PageHead, Sec, SecHead, seedGroups } from "./hall/sections/kit";
+import { HeadCast, Peek, scarfFor, speciesFor, type PetRef } from "./site/Deco";
 
 interface Check { roll: boolean; share: boolean }
 type Run = { k: "idle" } | { k: "run" } | { k: "done"; checks: Check[]; sum: bigint; ok: boolean; bad: number };
@@ -156,7 +157,9 @@ export function WindowDetail({ id }: { id: string }) {
   if (w === null) {
     return (
       <>
-        <PageHead label={P.win.label} title={P.win.none} lede={P.win.noneSub} />
+        <PageHead label={P.win.label} title={P.win.none} lede={P.win.noneSub}>
+          <HeadCast pets={[["chick", "sky"], ["bunny", "saffron"], ["cat", "mint"]]} />
+        </PageHead>
         <Sec labelledBy="rec-h">
           <SecHead id="rec-h">{P.win.recentTitle}</SecHead>
           <RecentWindows limit={8} />
@@ -183,6 +186,8 @@ export function WindowDetail({ id }: { id: string }) {
     <>
       <PageHead label={P.win.label} title={<><span className="pg-ln">Round No. {n}</span> <span className="pg-ln">{fill(P.win.served, { date: day(w.closedAt).replace(/ /g, "\u00A0") })}</span></>} lede={t("h.win.lead")}>
         {rebuilt ? <p className="fine">{P.win.rebuilt}</p> : null}
+        {/* v25.1: the round's own players, as the hall drew them (species from the owner, scarf from the player colour) */}
+        {rows.length ? <HeadCast pets={rows.slice(0, 5).map((r): PetRef => [speciesFor(r.e.owner), scarfFor(r.color)])} /> : null}
       </PageHead>
 
       <Sec id="recompute" labelledBy="rcp-h">
@@ -221,6 +226,7 @@ export function WindowDetail({ id }: { id: string }) {
             </div>
             <div className="pg-entries">
               <h3 className="title" id="ent-h">{P.win.listTitle}</h3>
+              <Peek pets={[["polar", "teal"], ["panda", "saffron"]]}>
               <TableWrap>
                 <table className="pg-table" aria-labelledby="ent-h">
                   <thead>
@@ -243,6 +249,7 @@ export function WindowDetail({ id }: { id: string }) {
                   </tbody>
                 </table>
               </TableWrap>
+              </Peek>
               <p className="pg-range">{t("h.res.range", { min: mult(min), max: mult(max) })}</p>
               <p className="fine">
                 {t("h.res.sum1", { total: solX(w.total), toCurve: solX(fees.toCurve), fee: solX(fees.platform) })}{fees.host > 0n ? t("h.res.sumHost", { host: solX(fees.host) }) : ""}{bounty > 0n ? t("h.res.sumBounty", { bounty: solX(bounty) }) : ""}. {t("h.res.sum2", { tokens: ladle(sumShares) })}

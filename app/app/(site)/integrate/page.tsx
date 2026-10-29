@@ -12,6 +12,7 @@ import { maxHostFeeBps } from "../../../lib/measurements";
 import { keeperBountyPct } from "../../../lib/project";
 import { splitFees } from "../../../lib/law-settle";
 import { GITHUB_PROGRAM_README } from "../../../lib/links";
+import { HallWindow, HeadCast, Peek } from "../../../components/site/Deco";
 import { TableWrap } from "../../../components/TableWrap";
 
 export const metadata: Metadata = { title: "Integrate" };
@@ -67,7 +68,9 @@ await createIntegration({
 
   return (
     <>
-      <PageHead label={P.int.label} title={P.int.title} lede={t("h.host.body")} />
+      <PageHead label={P.int.label} title={P.int.title} lede={t("h.host.body")}>
+        <HeadCast pets={[["fox", "mint"], ["cow", "saffron"], ["chick", "sky"], ["pig", "teal"], ["cat", "plum"]]} size={116} />
+      </PageHead>
 
       <Sec id="room" labelledBy="rm-h">
         <div className="pg-split">
@@ -88,6 +91,7 @@ await createIntegration({
           <div className="c4 pg-col">
             <SecHead n={2} id="ru-h">{P.int.rulesTitle}</SecHead>
             <p className="body">{fill(P.int.rulesIntro, { pct: (host.value / 100).toFixed(2) })}</p>
+            <HallWindow src="velvet" />
           </div>
           <div className="c8 pg-col pg-col-r"><Notes items={rules} /></div>
         </div>
@@ -125,7 +129,11 @@ await createIntegration({
             <SecHead n={4} id="cm-h">{P.int.cmdTitle}</SecHead>
             <p className="body">{t("h.int.cmdsIntro")}</p>
           </div>
-          <div className="c8 pg-col pg-col-r"><Glossary rows={P.host.cmds.map((c) => ({ c: c.c, r: c.r }))} /></div>
+          <div className="c8 pg-col pg-col-r">
+            <Peek pets={[["penguin", "saffron"], ["bunny", "teal"]]}>
+              <Glossary rows={P.host.cmds.map((c) => ({ c: c.c, r: c.r }))} />
+            </Peek>
+          </div>
         </div>
       </Sec>
 
