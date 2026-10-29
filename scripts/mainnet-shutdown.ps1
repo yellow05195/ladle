@@ -44,12 +44,53 @@ param(
   [string]$Authority = "",
   [int]$CuPrice = 20000,
   # the wind-down build's notice: 604800 (7 days); a devnet rehearsal build (feature "rehearsal") has 600
-  [int]$NoticeSecs = 604800
+  [int]$NoticeSecs = 604800,
+  # the owner said yes once, in the desktop launcher (Recuperer mon argent Ladle.cmd), to every step: no word is asked
+  [switch]$Yes,
+  # once the program is closed: the keeper, the deployer and the treasury (its key file on this PC) are swept to -Owner
+  [switch]$Sweep
 )
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "ladle-common.ps1")
 Use-SolanaCli
 $root = $script:LadleRoot
+if ($Yes) { $script:LadleAssumeYes = $true }
+
+# The keeper the desktop launcher runs on this PC (scripts\keeper-mainnet-local.cmd) reads its mode from this file at
+# each (re)start: normal, shutdown (KEEPER_SHUTDOWN=1) or off (its loop ends). The running one listens on port 8788.
+$modeFile = Join-Path $script:LadleKeyDir "keeper-mode.txt"
+function Set-LocalKeeper([ValidateSet("shutdown", "off")][string]$Mode) {
+  if ($Cluster -ne "mainnet-beta") { return }
+  $now = if (Test-Path $modeFile) { (Get-Content $modeFile -Raw).Trim() } else { "normal" }
+  if ($now -eq $Mode) { return }
+  Set-Content -Path $modeFile -Value $Mode -Encoding ascii
+  $c = Get-NetTCPConnection -LocalPort 8788 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($c) { Stop-Process -Id $c.OwningProcess -Force; Write-Host "the keeper on this PC goes to '$Mode' mode" }
+}
+
+# -Sweep: everything left on our own keys goes to -Owner (after the close: nothing of the game needs them any more)
+function Invoke-Sweeps($Report) {
+  Set-LocalKeeper "off"
+  $treasuryKey = Join-Path $script:LadleKeyDir "ladle-mainnet-treasury.json"
+  $wallets = @(,@("keeper", $keeper, $Report.keeper.wsol))
+  if ($Cluster -eq "mainnet-beta" -and $treasury -and (Test-Path $treasuryKey) -and (Get-Address $treasuryKey) -eq $treasury) {
+    $wallets += ,@("treasury", $treasuryKey, $Report.treasury.wsol)
+  }
+  $wallets += ,@("deployer", $deployer, $null)
+  foreach ($w in $wallets) {
+    $name, $key, $wsol = $w
+    if ($wsol -and $wsol.exists) {
+      $code = Invoke-Scrubbed { spl-token unwrap $wsol.address $key --fee-payer $key --url $RpcUrl } $RpcUrl
+      if ($code -ne 0) { Write-Host "$name : unwrap failed (rerun this script)" -ForegroundColor Yellow }
+    }
+    $addr = Get-Address $key
+    if ((Get-Lamports $addr $RpcUrl) -le 5000) { Write-Host "$name $addr is empty"; continue }
+    $code = Invoke-Scrubbed { solana transfer $Owner ALL --keypair $key --fee-payer $key --url $RpcUrl } $RpcUrl
+    if ($code -ne 0) { Write-Host "$name : transfer failed (rerun this script)" -ForegroundColor Yellow }
+    else { Write-Host "$name $addr swept to $Owner" -ForegroundColor Green }
+  }
+  Write-Host "your wallet $Owner now holds $(Format-Sol (Get-Lamports $Owner $RpcUrl)) SOL" -ForegroundColor Green
+}
 
 if ($Cluster -eq "mainnet-beta" -and $NoticeSecs -ne 604800) { throw "-NoticeSecs other than 604800 is for a devnet rehearsal build only" }
 if (-not (Test-PublicKey $Owner)) { throw "-Owner is not a base58 public key: $Owner" }
@@ -103,7 +144,11 @@ function Format-Utc([int64]$Unix) {
 
 $r = Get-Report
 $p = $r.program
-if (-not $p.deployed) { Write-Host "program $programId is not deployed on ${Cluster}: nothing to stop"; return }
+if (-not $p.deployed) {
+  Write-Host "program $programId is not deployed on ${Cluster}: nothing to stop"
+  if ($Sweep) { Invoke-Sweeps $r }
+  return
+}
 if (-not $p.upgradeAuthority) { throw "program $programId is immutable: it can be neither stopped nor closed" }
 if ($p.authorityIsDeployer) { $auth = $deployer }
 elseif ($Authority) { $auth = $Authority }
@@ -180,6 +225,8 @@ if ($open.Count -gt 0) {
   foreach ($m in $open) { Write-Host ("market {0}: notice ends {1}{2}" -f $m.address, (Format-Utc ([int64]$m.noticeEnd)), $(if ($m.noticeOver) { " (over)" } else { "" })) }
 }
 $running = @($markets | Where-Object { $_.noticeOver -ne $true })
+# the keeper on this PC finishes the notice in shutdown mode: it pays every entry out once it ends, then exits
+if ($markets.Count -gt 0) { Set-LocalKeeper "shutdown" }
 if ($running.Count -gt 0) {
   $last = ($running | ForEach-Object { [int64]$_.noticeEnd } | Measure-Object -Maximum).Maximum
   Write-Host "`nThe notice runs until $(Format-Utc $last). Meanwhile:" -ForegroundColor Yellow
@@ -198,6 +245,7 @@ if ($r.programClosable -ne $true) {
   foreach ($why in @($r.closeBlockers)) { Write-Host "  - $why" }
   Write-Host "If the VPS keeper runs with KEEPER_SHUTDOWN=1 it is paying these out: wait for its 'drained' line, then rerun this script."
   Confirm-Step "DRAIN" "Or run the same drain from this PC now, with the keeper key (it exits by itself once everything is paid out and closed)?"
+  Set-LocalKeeper "off"
   $code = Invoke-ShutdownKeeper
   if ($code -ne 0) { throw "the drain stopped (exit $code): rerun this script, it resumes" }
   $r = Get-Report
@@ -221,6 +269,7 @@ Confirm-Step "CLOSE" "Close program $programId for good?"
 $code = Invoke-Scrubbed { solana program close $programId --keypair $deployer --authority $auth --recipient $Owner --bypass-warning --url $RpcUrl } $RpcUrl
 if ($code -ne 0) { throw "program close failed: rerun this script" }
 Write-Host "program closed: $(Format-Sol $rent) SOL sent to $Owner" -ForegroundColor Green
+if ($Sweep) { Invoke-Sweeps (Get-Report); return }
 Write-Host "`nThe last sweeps (scripts/mainnet-recover.ps1 -Owner $Owner prints them with their amounts):"
 Write-Host "  keeper   : on the VPS stop it (sudo systemctl stop ladle-keeper), then here:"
 Write-Host "             spl-token unwrap <its wSOL account> $keeper --fee-payer $keeper -u $Cluster   (if it has one)"

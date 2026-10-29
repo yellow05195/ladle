@@ -11,7 +11,7 @@ export const P = {
   how: {
     l1: "How a round",
     l2: "plays.",
-    lede: "Four beats, about twenty seconds, the same for every player.",
+    lede: "Four beats, one round of a few minutes, the same for every player.",
     odds: "Read the odds",
   },
 
@@ -99,7 +99,7 @@ export const P = {
     label: "Security",
     title: "What the program can and cannot do.",
     statusTitle: "Where it stands.",
-    cannotTitle: "What nobody can do.",
+    cannotTitle: "What the program refuses.",
     stepsTitle: "Four instructions.",
     entry: "platform fee on entry",
     sell: "fee on sell back",
@@ -131,18 +131,18 @@ export const P = {
 
   about: {
     label: "About",
-    title: "Twenty seconds, served in the open.",
+    title: "One round, served in the open.",
     lede: "Ladle is a draw game on Solana. Everyone in a round pays the same price; one verifiable seed splits the round's single buy.",
     gameTitle: "What Ladle is.",
     houseT: "What the house takes",
-    houseB: "1.00 % on entry. Nothing on the draw, nothing on the sell back, and nobody can pause a claim, a sell back or a refund.",
+    houseB: "1.00 % on entry. Nothing on the draw, nothing on the sell back. No instruction pauses a sell back or a refund; only an upgrade of the program could.",
     solTitle: "How Ladle runs on Solana.",
     rows: [
-      { t: "The program", b: "One Solana program holds the round: it takes entries at one price, seals at slot 92, asks ORAO VRF for a seed, and splits the round's single buy on the LADLE curve into scoops. The sum of the scoops is exactly the buy." },
+      { t: "The program", b: "One Solana program holds the round: it takes entries at one price, seals at the round's last slot, asks ORAO VRF for a seed, and splits the round's single buy on the LADLE curve into scoops. The sum of the scoops is exactly the buy." },
       { t: "The seed", b: "ORAO VRF delivers one seed per round with a proof. The keeper requests it in the transaction that seals the round, and the first request to land fixes it; only ORAO's signers, colluding with whoever sends that request, could try salts for a better draw. Every roll is derived from that seed, the entry's owner and its index, so any round can be recomputed in a browser." },
       { t: "The curve", b: "Each round makes one buy on the LADLE bonding curve, so the price steps up; each sell back steps it down, at the curve price, with 0 fee." },
       { t: "The keepers", b: "Sealing, requesting the seed and settling are permissionless steps. Anyone can run them for a small bounty written in the program." },
-      { t: "Today", b: "This site runs on demo data in your browser while the program is tested. It is not deployed or audited yet; the status page says what is done and what is not." },
+      { t: "Today", b: "Ladle runs on Solana mainnet, after real rounds and a shutdown rehearsal on devnet. The program is upgradeable and has no audit; the status page says what is done and what is not." },
     ],
     status: "Security and status",
     qaTitle: "Questions, answered.",
@@ -242,7 +242,7 @@ export const TOUR_COPY = {
     index: "The round",
     beats: [
       { t: "Join", b: "Everyone pays in at the same price." },
-      { t: "Seal", b: "At slot 92 the drum locks. No entry, no exit." },
+      { t: "Seal", b: "At the last slot the drum locks. No entry, no exit." },
       { t: "Draw", b: "One ORAO VRF seed, with a public proof." },
       { t: "Serve", b: "One buy on the curve, cut into scoops." },
     ],

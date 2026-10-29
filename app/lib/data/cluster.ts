@@ -10,7 +10,8 @@
  *   NEXT_PUBLIC_RPC_URL         required on mainnet-beta: a paid RPC whose
  *                               key only works from the site's origin
  *   NEXT_PUBLIC_RPC_WS_URL      optional: the provider's websocket, when it
- *                               is not the RPC url with wss://
+ *                               is not the RPC url with wss://; "off" when
+ *                               the RPC has none (the relay app/api/rpc)
  *   NEXT_PUBLIC_LADLE_PROGRAM   optional: the sdk's program id otherwise
  *   NEXT_PUBLIC_LADLE_MARKET    required in chain mode: the market PDA
  *   NEXT_PUBLIC_LADLE_REPO      the public repository (lib/links.ts): a
@@ -41,7 +42,10 @@ export const PUBLIC_RPC: Record<Cluster, string> = {
 };
 
 export const RPC_URL = (process.env.NEXT_PUBLIC_RPC_URL ?? "").trim();
-export const RPC_WS_URL = (process.env.NEXT_PUBLIC_RPC_WS_URL ?? "").trim();
+const rawWs = (process.env.NEXT_PUBLIC_RPC_WS_URL ?? "").trim();
+/** "off": the RPC has no websocket (the site's relay, app/api/rpc): no subscription, the polls carry everything. */
+export const RPC_WS_OFF = rawWs.toLowerCase() === "off";
+export const RPC_WS_URL = RPC_WS_OFF ? "" : rawWs;
 export const PROGRAM_ENV = (process.env.NEXT_PUBLIC_LADLE_PROGRAM ?? "").trim();
 export const MARKET_ENV = (process.env.NEXT_PUBLIC_LADLE_MARKET ?? "").trim();
 

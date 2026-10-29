@@ -370,9 +370,25 @@ function Assert-BuildEmbeds([string]$So, [string]$ProgramId, [string]$Treasury) 
 }
 
 # Type a word to go on (the scripts that spend SOL ask before each step).
+# -Yes on a script sets LadleAssumeYes: the owner said yes once, in the
+# desktop launcher that runs it, to every step it lists; each step is still printed.
+$script:LadleAssumeYes = $false
 function Confirm-Step([string]$Word, [string]$Question) {
+  if ($script:LadleAssumeYes) { Write-Host "$Question -> $Word (confirmed in the launcher)"; return }
+  # the word itself is the consent, not its case
   $answer = Read-Host "$Question Type $Word to continue"
-  if ($answer -cne $Word) { throw "stopped: nothing more was sent" }
+  if ($answer.Trim() -ne $Word) { throw "stopped at '$Word': nothing more was sent. Run it again and type $Word" }
+}
+
+# A dated copy of every key in .config\ladle, next to it on this PC
+# (%USERPROFILE%\Ladle-sauvegarde-cles, outside any synced folder): against a
+# deleted or overwritten file. A USB copy kept apart is still the real backup.
+function Backup-LadleKeys {
+  $dest = Join-Path $env:USERPROFILE ("Ladle-sauvegarde-cles\" + (Get-Date -Format "yyyy-MM-dd_HH-mm-ss"))
+  New-Item -ItemType Directory -Force -Path $dest | Out-Null
+  Copy-Item (Join-Path $script:LadleKeyDir "*") $dest -Recurse
+  Write-Host "keys copied to $dest"
+  return $dest
 }
 
 # Run a native command that talks to $Url, show its output with the URL (and

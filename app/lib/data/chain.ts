@@ -66,7 +66,7 @@ import {
   type Window,
 } from "@pulled/sdk";
 import { slotMs } from "../measurements";
-import { CLUSTER, MAINNET, MARKET_ENV, PROGRAM_ENV, RPC_ENDPOINT, RPC_URL, RPC_WS_URL, clusterProblem, type Cluster } from "./cluster";
+import { CLUSTER, MAINNET, MARKET_ENV, PROGRAM_ENV, RPC_ENDPOINT, RPC_URL, RPC_WS_OFF, RPC_WS_URL, clusterProblem, type Cluster } from "./cluster";
 import { pseudonym } from "./mock";
 import type { DataSource, EntryView, Halt, LiveWindow, PastDistribution, Phase, ScoopLeft, ScoopOutcome, SettlementView, StakeBack, WindowView } from "./types";
 
@@ -182,9 +182,19 @@ async function sendAndConfirm(tx: Transaction): Promise<string> {
   await checkGenesis();
   const conn = c().connection;
   const sig = await wallet.sendTransaction(tx, conn);
-  const res = await conn.confirmTransaction({ signature: sig, blockhash: tx.recentBlockhash!, lastValidBlockHeight: tx.lastValidBlockHeight! }, "confirmed");
-  if (res.value.err) throw new Error(`transaction failed: ${JSON.stringify(res.value.err)}`);
-  return sig;
+  // polled, not subscribed: the confirmation holds without a websocket (RPC_WS_OFF), and a lost subscription cannot hang it
+  for (let n = 0; ; n++) {
+    await new Promise((r) => setTimeout(r, n === 0 ? 400 : 1_000));
+    const status = (await conn.getSignatureStatuses([sig]).catch(() => null))?.value[0];
+    if (status?.err) throw new Error(`transaction failed: ${JSON.stringify(status.err)}`);
+    if (status && (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized")) return sig;
+    if (n % 5 === 4 && (await conn.getBlockHeight("confirmed").catch(() => 0)) > tx.lastValidBlockHeight!) {
+      // expired: one last look (it may have landed in the last block before)
+      const last = (await conn.getSignatureStatuses([sig], { searchTransactionHistory: true }).catch(() => null))?.value[0];
+      if (last && !last.err && last.confirmationStatus) return sig;
+      throw new Error("transaction expired before it was confirmed: nothing was taken, try again");
+    }
+  }
 }
 
 /* ------------------------------ what this page knows ------------------------------ */
@@ -518,7 +528,7 @@ const subs = new Map<string, number>();
 let logSub: number | null = null;
 
 function syncSubs(): void {
-  if (!running || !awake || CFG.problem || !market) return;
+  if (!running || !awake || CFG.problem || !market || RPC_WS_OFF) return;
   const conn = c().connection;
   // the market, the rounds in reach (not the closed ones) and the viewer's entries in them (settle_page writes the share, a take closes it)
   const want = new Map<string, { pk: PublicKey; on: (info: AccountInfo<Buffer>, ctx: Context) => void }>();

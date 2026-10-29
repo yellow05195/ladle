@@ -55,7 +55,9 @@
 # players forget does not keep it locked. Until the handover, the deployer
 # key file on this PC can replace the program: SECURITY.md section 7.
 param(
-  [Parameter(Mandatory = $true)][string]$Treasury,
+  [string]$Treasury = "",
+  # or a treasury keypair FILE on this PC (our own, in .config\ladle): its address is read from the file, so no retyping
+  [string]$TreasuryKeypair = "",
   [Parameter(Mandatory = $true)][string]$RpcUrl,
   [string]$AppRpcUrl = "",
   [string]$AppRpcWsUrl = "",
@@ -75,7 +77,10 @@ param(
   [string]$DevnetRpcUrl = "https://api.devnet.solana.com",
   # optional: the upgrade authority's new home, a signer (usb://ledger, or a keypair file); empty = stays on the deployer
   [string]$UpgradeAuthority = "",
-  [switch]$SkipBuild
+  [switch]$SkipBuild,
+  # the owner said yes once, in the desktop launcher (Lancer Ladle mainnet.cmd), to every step below: no word is asked,
+  # each step is still printed, and the keys are copied to %USERPROFILE%\Ladle-sauvegarde-cles instead of BACKEDUP
+  [switch]$Yes
 )
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "ladle-common.ps1")
@@ -92,13 +97,22 @@ $programSo = "$root\target\deploy\ladle.so"
 $deployment = "$root\config\deployments\mainnet-beta.json"
 
 function Confirm-Word([string]$Word, [string]$Question) {
+  if ($Yes) { Write-Host "$Question -> $Word (confirmed in the launcher)"; return }
+  # the word itself is the consent, not its case: "hotkey " is as deliberate as "HOTKEY"
   $answer = Read-Host "$Question Type $Word to continue"
-  if ($answer -cne $Word) { throw "stopped: nothing more was sent" }
+  if ($answer.Trim() -ne $Word) { throw "stopped at '$Word' (typed '$($answer.Trim())'): nothing more was sent. Run it again and type $Word" }
 }
 
 Write-Host "Ladle mainnet-beta bring-up. This spends real SOL." -ForegroundColor Yellow
 
 # 0. inputs
+if ($TreasuryKeypair) {
+  if ($Treasury) { throw "give -Treasury or -TreasuryKeypair, not both" }
+  if (-not (Test-Path $TreasuryKeypair)) { throw "-TreasuryKeypair not found: $TreasuryKeypair" }
+  $Treasury = (Invoke-Native { solana-keygen pubkey $TreasuryKeypair }).Out.Trim()
+  Write-Host "treasury $Treasury (from ${TreasuryKeypair}: back this file up, it is the only key to the fees)"
+}
+if (-not $Treasury) { throw "give -Treasury <your wallet address> or -TreasuryKeypair <keypair file>" }
 if (-not (Test-PublicKey $Treasury)) { throw "-Treasury is not a base58 public key: $Treasury" }
 if ($Treasury -eq $script:LadleDevnetTreasury) { throw "-Treasury is the devnet placeholder key: give your own mainnet treasury (a hardware wallet or a multisig vault)" }
 Assert-Cluster $RpcUrl "mainnet-beta"
@@ -109,9 +123,14 @@ if ($treasuryInfo -and $treasuryInfo.owner -ne "11111111111111111111111111111111
     "With a Squads multisig, give its VAULT address (the one that holds SOL), not the multisig account.")
 }
 if (-not $treasuryInfo) { Write-Host "NOTE: the treasury $Treasury has never held SOL on mainnet. Make sure it is your wallet's address." -ForegroundColor Yellow }
-$tail = $Treasury.Substring($Treasury.Length - 8)
-$typed = Read-Host "Open your treasury wallet and type the LAST 8 characters of its address as the wallet shows them (do not copy them from here)"
-if ($typed.Trim() -cne $tail) { throw "stopped: '$($typed.Trim())' is not the end of -Treasury ($Treasury). Check the address against your wallet; nothing was sent" }
+# a typed address is retyped from the wallet; one read from its own key file cannot hold a typo
+if (-not $TreasuryKeypair) {
+  $tail = $Treasury.Substring($Treasury.Length - 8)
+  $typed = Read-Host "Open your treasury wallet and type the LAST 8 characters of its address as the wallet shows them (do not copy them from here)"
+  if ($typed.Trim() -cne $tail) { throw "stopped: '$($typed.Trim())' is not the end of -Treasury ($Treasury). Check the address against your wallet; nothing was sent" }
+}
+# the public endpoint rate-limits RPC writes until the CLI gives up (seen on devnet): there the ~400 writes go over TPU
+$writeVia = if ($RpcUrl -match "api\.mainnet-beta\.solana\.com") { @("--max-sign-attempts", "100") } else { @("--use-rpc") }
 if (-not $AppRpcUrl) { Write-Host "NOTE: no -AppRpcUrl: vercel-production.env gets a placeholder; the browser needs its own key restricted to $SiteOrigin" -ForegroundColor Yellow }
 elseif ($AppRpcUrl -eq $RpcUrl) { throw "-AppRpcUrl must not be the keeper's -RpcUrl: every visitor can read the browser's key; use a second key restricted to $SiteOrigin" }
 else { Assert-ClusterIfReachable $AppRpcUrl "mainnet-beta" "-AppRpcUrl (the site's RPC)" }
@@ -136,7 +155,7 @@ if ($created.Count) {
   Write-Host "BACK UP these files now, offline (a USB key kept apart from this PC), before any SOL is sent to them:" -ForegroundColor Yellow
   foreach ($c in $created) { Write-Host "  $c" -ForegroundColor Yellow }
   Write-Host "(no recovery words were printed: this console can be read back; the file is the key)" -ForegroundColor Yellow
-  Confirm-Word "BACKEDUP" "Copied them?"
+  if ($Yes) { Backup-LadleKeys | Out-Null } else { Confirm-Word "BACKEDUP" "Copied them?" }
 }
 New-LadleKeypair $buffer
 if (Test-Path $programKeypair) {
@@ -240,7 +259,7 @@ Write-Host "`n4. program"
 if (-not $deployed) {
   if ($bufferExists) { Write-Host "resuming the interrupted deploy into buffer $bufferAddr" }
   $code = Invoke-Scrubbed { solana program deploy $programSo --program-id $programKeypair --buffer $buffer --keypair $deployer `
-    --upgrade-authority $deployer --max-len $soLen --with-compute-unit-price $CuPrice --use-rpc --url $RpcUrl } $RpcUrl
+    --upgrade-authority $deployer --max-len $soLen --with-compute-unit-price $CuPrice @writeVia --url $RpcUrl } $RpcUrl
   if ($code -ne 0) {
     Write-Host "the deploy stopped. Its buffer $bufferAddr holds ~$(Format-Sol $rentBuffer) SOL:" -ForegroundColor Yellow
     Write-Host "  resume: run this script again (same buffer, same command)"
