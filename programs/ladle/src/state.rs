@@ -4,11 +4,40 @@
 //! and no `set_*`/`update_*`):
 //! * `Integration`: immutable after creation.
 //! * `Market`: only `curve`, `window_count`, `next_settle_index`,
-//!   `has_active_window`/`active_window` ever change.
+//!   `has_active_window`/`active_window` (`close_window` of a finished
+//!   active window clears `has_active_window`), `live_windows` (open_window
+//!   +1, close_window -1) and `notice_start` (set by the wind-down build's
+//!   `start_wind_down`, cleared by every `open_window` of a normal build)
+//!   ever change. Closed only by the wind-down build's `close_market`.
+//!
+//! Upgrades (the program stays upgradeable): Anchor reads an account with
+//! borsh from its start, so an account larger than its struct still reads
+//! and a smaller one does not. A field appended to a struct therefore breaks
+//! every live account made before it. `Market` lives as long as its market
+//! and ends with `reserved` for that: a later field is carved out of
+//! `reserved` and the size stays (v25 carved `notice_start`, `live_windows`
+//! and `counts_windows` out of it; 47 bytes are left). (Its strings are
+//! allocated at their maximum length, so a market made before `reserved`
+//! existed still reads while its name, symbol and uri leave 64 bytes unused,
+//! which every market made by keeper/src/ops/create-market.ts does.)
+//! `Window` ends with 64 reserved bytes too (third review): the active
+//! window and a Refunding window with stakes not yet refunded outlive a
+//! round, and an unreadable one would stop the market's next `open_window`
+//! or freeze those refunds. `Entry` has no reserve (its rent is paid by its
+//! player); a later change to it must ship with a decoder for the old size
+//! (or a realloc migration) in the same upgrade, or every live entry stops
+//! being sellable until it does. The sizes are pinned in
+//! `account_sizes_are_pinned` below.
 //! * `Window`: advances through `WindowState` exactly once per state; the
 //!   frozen fields (`seed`, `roll_sum`, `tokens_out`, fees) are written once.
-//! * `Entry`: `roll` and `share` are written once; `claimed`/`refunded` only
-//!   grow. Closed by `close_entry` once nothing is left to claim or refund.
+//! * `Entry`: `roll`, `share` and `settled` are written once; `claimed`/
+//!   `refunded` only grow (`claimed` counts the share sold back; the name
+//!   predates v25, when a share could also be taken to a wallet). Closed by
+//!   `close_entry` once nothing is left to sell or refund, or by the
+//!   wind-down build's `force_exit`, which pays what is left to the owner.
+//!   Everything `sell_back`/`close_entry`/`force_exit` need is in the Entry
+//!   (and the Market), so a Settled window can be closed while its entries
+//!   are still open.
 
 use anchor_lang::prelude::*;
 use solana_sha256_hasher::hashv;
@@ -63,6 +92,25 @@ pub struct Market {
     pub symbol: String,
     #[max_len(MAX_URI_LEN)]
     pub uri: String,
+    /// Shutdown notice (wind-down build): the cluster clock (unix seconds)
+    /// when `start_wind_down` ran for this market, 0 when no notice runs.
+    /// `force_exit` and `close_market` wait for `notice_start +
+    /// WIND_DOWN_NOTICE_SECS`. Every `open_window` (normal build) sets it
+    /// back to 0, so a shutdown called off by redeploying the normal build
+    /// needs a new, full notice. (v25, carved out of `reserved`.)
+    pub notice_start: i64,
+    /// Windows opened and not yet closed (`open_window` +1, `close_window`
+    /// -1), counted when `counts_windows`. `close_market` needs 0: a window
+    /// holds its opener's rent and may hold stakes. (v25.)
+    pub live_windows: u64,
+    /// Set by `create_market` from v25 on: `live_windows` has counted every
+    /// window of this market. A market made earlier never closes
+    /// (`close_market` refuses it; its entries and windows still pay out
+    /// and close as usual). (v25.)
+    pub counts_windows: bool,
+    /// Zero, never written: room for a field added by an upgrade (see the
+    /// module comment).
+    pub reserved: [u8; 47],
 }
 
 impl Market {
@@ -104,8 +152,11 @@ pub struct Window {
     /// `enter`. Makes the VRF seed depend on the final entry set, so nobody
     /// (ORAO included) can evaluate the draw before the window is closed.
     pub entries_commitment: [u8; 32],
-    /// ORAO request seed, fixed at `seal`:
+    /// At `seal`, the seal seed:
     /// sha256("ladle:vrf:v1" || window || close_slot || entry_count || entries_commitment).
+    /// `request_vrf(salt)` replaces it with the seed it asks ORAO for:
+    /// sha256("ladle:vrf:req" || seal seed || salt) (`fulfill` and
+    /// `refund_window` read that one).
     pub vrf_seed: [u8; 32],
     pub vrf_requested: bool,
     /// Slot of `request_vrf` (0 if never requested). The refund timeout runs
@@ -133,13 +184,25 @@ pub struct Window {
     /// Who paid for open_window; gets the Window + escrow rent back at
     /// close_window.
     pub opener: Pubkey,
-    /// Entries closed by close_entry (rent returned to their owners).
-    /// close_window requires closed_entries == entry_count.
-    pub closed_entries: u32,
+    /// Stakes returned by refund_entry. A Refunding window can be closed only
+    /// once refunded_entries == entry_count (refund_entry pays from the
+    /// escrow, signed by the window); a Settled window needs no count.
+    pub refunded_entries: u32,
+    /// Who paid ORAO at `request_vrf` (default key until then): the keeper
+    /// bounty of a window that went through ORAO goes to this key's quote
+    /// ATA, not to whoever sends the final page.
+    pub vrf_payer: Pubkey,
+    /// Zero, never written: room for a field added by an upgrade (see the
+    /// module comment). Costs the opener 64 bytes of rent per round, back at
+    /// `close_window`.
+    pub reserved: [u8; 64],
 }
 
 /// Domain tag of the VRF seed derivation.
 pub const VRF_SEED_DOMAIN: &[u8] = b"ladle:vrf:v1";
+
+/// Domain tag of the seed `request_vrf` asks ORAO for.
+pub const VRF_REQUEST_DOMAIN: &[u8] = b"ladle:vrf:req";
 
 impl Window {
     pub fn is_open(&self) -> bool {
@@ -167,6 +230,24 @@ impl Window {
             entries_commitment,
         ])
         .to_bytes()
+    }
+
+    /// The seed `request_vrf` asks ORAO for:
+    /// sha256("ladle:vrf:req" || seal seed || salt).
+    ///
+    /// Why a salt: the seal seed is public from `close_slot` on, and ORAO
+    /// accepts each seed once (`SeedAlreadyInUse`), from anyone. Requested
+    /// directly at ORAO by a stranger first, it could never be drawn for the
+    /// window and every round would end in a refund. The salt is chosen by
+    /// the requester in the request itself, so nobody can use its seed up
+    /// beforehand; a request that loses that race is retried with another
+    /// salt. Choosing the salt does not choose the draw: ORAO's output for a
+    /// new seed is unknown until ORAO answers it on chain (unless every ORAO
+    /// fulfilment authority colludes with the requester: SECURITY.md §3),
+    /// and the first request that lands fixes the seed for good
+    /// (`VrfAlreadyRequested`).
+    pub fn derive_request_seed(seal_seed: &[u8; 32], salt: &[u8; 32]) -> [u8; 32] {
+        hashv(&[VRF_REQUEST_DOMAIN, seal_seed, salt]).to_bytes()
     }
 
     /// Slot after which `refund_window` may run: the timeout counts from the
@@ -202,10 +283,35 @@ pub struct Entry {
     pub roll: u64,
     /// Tokens allotted; written by `settle_page`.
     pub share: u64,
-    /// Tokens already claimed or sold back (<= share).
+    /// Tokens of the share already sold back (<= share); before v25 also
+    /// those claimed to a wallet.
     pub claimed: u64,
     pub refunded: bool,
     pub bump: u8,
+    /// `window.market`, copied by `enter`: `sell_back`/`force_exit` bind the
+    /// entry to the market's vaults without reading the Window.
+    pub market: Pubkey,
+    /// `window.index`, copied by `enter`: compared with the market's
+    /// settlement cursor (see `window_settled`).
+    pub window_index: u64,
+    /// Set by `settle_page` together with `share`: the share is final and
+    /// the window went through `Tallied` (so it can never be `Refunding`).
+    pub settled: bool,
+}
+
+impl Entry {
+    /// True once this entry's window is `Settled`, from the Entry and its
+    /// Market alone (the Window may already be closed). Windows leave the
+    /// settlement queue strictly in index order and only as `Settled` or
+    /// `Refunding` (`market.next_settle_index` moves only in `seal` (empty),
+    /// `refund_window` and the last `settle_page`, each for the window at the
+    /// cursor), so `window_index < next_settle_index` means the window is
+    /// Settled or Refunding for good; `settled` rules out Refunding. Callers
+    /// pass `market.next_settle_index` of the market they checked against
+    /// `entry.market` (has_one).
+    pub fn window_settled(&self, next_settle_index: u64) -> bool {
+        self.settled && self.window_index < next_settle_index
+    }
 }
 
 /// Cursor rule shared by `tally_page` and `settle_page`.
@@ -237,6 +343,73 @@ mod tests {
         assert!(8 + Market::INIT_SPACE < TEN_KB, "Market {}", Market::INIT_SPACE);
         assert!(8 + Window::INIT_SPACE < TEN_KB, "Window {}", Window::INIT_SPACE);
         assert!(8 + Entry::INIT_SPACE < TEN_KB, "Entry {}", Entry::INIT_SPACE);
+    }
+
+    #[test]
+    fn account_sizes_are_pinned() {
+        // what is deployed (sdk ACCOUNT_SIZES): a change here breaks live accounts
+        assert_eq!(8 + Integration::INIT_SPACE, 43);
+        assert_eq!(8 + Market::INIT_SPACE, 626);
+        assert_eq!(8 + Window::INIT_SPACE, 507);
+        assert_eq!(8 + Entry::INIT_SPACE, 151);
+    }
+
+    fn market_with(name: &str, symbol: &str, uri: &str) -> Market {
+        Market {
+            creator: Pubkey::new_unique(),
+            token_mint: Pubkey::new_unique(),
+            quote_mint: Pubkey::new_unique(),
+            quote_program: Pubkey::new_unique(),
+            integration: Pubkey::default(),
+            curve: Curve { x: INITIAL_VIRTUAL_X, y: INITIAL_VIRTUAL_Y },
+            window_slots: 560,
+            vrf_timeout_slots: 900,
+            max_entry_amount: 5_000_000_000,
+            max_entry_bps: 2_000,
+            entry_floor_amount: 500_000_000,
+            window_count: 7,
+            next_settle_index: 6,
+            has_active_window: true,
+            active_window: 6,
+            quote_vault: Pubkey::new_unique(),
+            token_vault: Pubkey::new_unique(),
+            bump: 254,
+            name: name.into(),
+            symbol: symbol.into(),
+            uri: uri.into(),
+            notice_start: 0,
+            live_windows: 0,
+            counts_windows: false,
+            reserved: [0; 47],
+        }
+    }
+
+    #[test]
+    fn a_market_made_before_reserved_still_reads() {
+        // the 562-byte market of the build before `reserved` (devnet), with the
+        // strings create-market.ts writes: the reserve reads from the string slack
+        let m = market_with("Ladle", "LADLE", "https://useladle.fun/token.json");
+        let mut data = Vec::new();
+        m.try_serialize(&mut data).unwrap();
+        data.truncate(data.len() - 64); // the old layout ends at `uri`
+        data.resize(562, 0);
+        let back = Market::try_deserialize(&mut &data[..]).unwrap();
+        assert_eq!(back.reserved, [0u8; 47]);
+        // the v25 fields read as zero: no notice, an uncounted market (never closable)
+        assert_eq!((back.notice_start, back.live_windows, back.counts_windows), (0, 0, false));
+        assert_eq!(back.uri, m.uri);
+        assert_eq!(back.window_count, 7);
+        // and it writes back into the same 562 bytes
+        let mut out = Vec::new();
+        back.try_serialize(&mut out).unwrap();
+        assert!(out.len() <= 562);
+        // strings at their maximum leave no slack: such an old market would not read
+        let full = market_with(&"n".repeat(MAX_NAME_LEN), &"s".repeat(MAX_SYMBOL_LEN), &"u".repeat(MAX_URI_LEN));
+        let mut data = Vec::new();
+        full.try_serialize(&mut data).unwrap();
+        data.truncate(data.len() - 64);
+        assert_eq!(data.len(), 562);
+        assert!(Market::try_deserialize(&mut &data[..]).is_err());
     }
 
     #[test]
@@ -273,6 +446,21 @@ mod tests {
     }
 
     #[test]
+    fn request_seed_is_salted_and_never_the_seal_seed() {
+        let seal = Window::derive_vrf_seed(&Pubkey::new_unique(), 100, 3, &[7u8; 32]);
+        let a = Window::derive_request_seed(&seal, &[1u8; 32]);
+        let b = Window::derive_request_seed(&seal, &[2u8; 32]);
+        // a pre-request of the public seal seed does not touch the seed asked for
+        assert_ne!(a, seal);
+        assert_ne!(a, b);
+        assert_ne!(a, [0u8; 32]);
+        // domain separated from the seal derivation, and bound to the seal seed
+        assert_ne!(a, Window::derive_request_seed(&[0u8; 32], &[1u8; 32]));
+        assert_eq!(a, hashv(&[b"ladle:vrf:req", &seal, &[1u8; 32]]).to_bytes());
+        assert_eq!(a, Window::derive_request_seed(&seal, &[1u8; 32]));
+    }
+
+    #[test]
     fn refund_deadline_counts_from_request_when_present() {
         let mut w = Window {
             market: Pubkey::default(),
@@ -300,13 +488,43 @@ mod tests {
             escrow: Pubkey::default(),
             bump: 0,
             opener: Pubkey::default(),
-            closed_entries: 0,
+            refunded_entries: 0,
+            vrf_payer: Pubkey::default(),
+            reserved: [0; 64],
         };
         assert_eq!(w.refund_deadline(150), Some(200));
         w.vrf_requested = true;
         w.vrf_requested_slot = 90;
         assert_eq!(w.refund_deadline(150), Some(240));
         assert_eq!(w.refund_deadline(u64::MAX), None);
+    }
+
+    #[test]
+    fn entry_window_settled_needs_flag_and_cursor() {
+        let mut e = Entry {
+            window: Pubkey::default(),
+            owner: Pubkey::default(),
+            index: 0,
+            amount: 1,
+            roll: 0,
+            share: 0,
+            claimed: 0,
+            refunded: false,
+            bump: 0,
+            market: Pubkey::default(),
+            window_index: 7,
+            settled: false,
+        };
+        // a Refunding window's entries are never settled, whatever the cursor
+        assert!(!e.window_settled(8));
+        assert!(!e.window_settled(u64::MAX));
+        e.settled = true;
+        // settled entry, window still at the cursor (Tallied, pages pending)
+        assert!(!e.window_settled(7));
+        assert!(!e.window_settled(0));
+        // the cursor moved past the window: Settled
+        assert!(e.window_settled(8));
+        assert!(e.window_settled(u64::MAX));
     }
 
     #[test]

@@ -43,7 +43,9 @@ pub const BPS: u64 = 10_000;
 /// Platform fee in basis points, taken on the window total BEFORE the curve
 /// buy. Hard-coded, immutable: no instruction can change it.
 pub const PLATFORM_FEE_BPS: u64 = 100;
-/// Share of the platform fee paid to whoever finalizes the window (keeper bounty).
+/// Share of the platform fee paid as the keeper bounty: to the quote ATA of
+/// whoever paid the window's ORAO request (`window.vrf_payer`), or to the
+/// finalizer's account when the window needed no draw (`tally_page`).
 pub const KEEPER_BOUNTY_BPS_OF_PLATFORM_FEE: u64 = 1_000; // 10 % of the platform fee
 /// Maximum host (integrator) fee an integration can set at creation. Immutable afterwards.
 pub const MAX_HOST_FEE_BPS: u64 = 300;

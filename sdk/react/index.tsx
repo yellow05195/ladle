@@ -68,7 +68,6 @@ const DICT = {
     tokens: "tokens",
     multiplier: "pro-rata",
     sellBack: "Sell back now for",
-    claim: "Take the tokens",
     worst: "Smallest result of this window",
     best: "Largest result of this window",
     refunding: "No seed arrived in time. Every stake goes back in full.",
@@ -109,7 +108,6 @@ const DICT = {
     tokens: "jetons",
     multiplier: "pro-rata",
     sellBack: "Revendre maintenant pour",
-    claim: "Prendre les jetons",
     worst: "Plus petit résultat de cette fenêtre",
     best: "Plus grand résultat de cette fenêtre",
     refunding: "Aucune graine n'est arrivée à temps. Chaque mise revient en entier.",
@@ -302,10 +300,6 @@ export function PullWindow(props: PullWindowProps): ReactElement {
     if (!myEntry || !me) return;
     void sendTx("sellBack", () => client.sellBack({ entry: myEntry.pubkey, owner: me }));
   };
-  const onClaim = () => {
-    if (!myEntry || !me) return;
-    void sendTx("claim", () => client.claim({ entry: myEntry.pubkey, owner: me }));
-  };
   const onVerify = async () => {
     if (!window_) return;
     setVerifyMsg(null);
@@ -410,7 +404,6 @@ export function PullWindow(props: PullWindowProps): ReactElement {
                   <button className="pw-btn" onClick={onSellBack} disabled={!!busy}>
                     {busy === "sellBack" ? t.pending : `${t.sellBack} ${fmtUnits(quote.quoteOut, decimals, 6)}`}
                   </button>
-                  <button className="pw-btn pw-sec" onClick={onClaim} disabled={!!busy}>{busy === "claim" ? t.pending : t.claim}</button>
                 </div>
               )}
             </div>

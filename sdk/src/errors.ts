@@ -3,7 +3,7 @@
  * Anchor numbers custom errors from 6000 upwards.
  */
 export const PULLED_ERRORS = [
-  "HostFeeTooHigh", "WindowSlotsOutOfRange", "VrfTimeoutOutOfRange", "MaxEntryBpsOutOfRange", "MaxEntryAmountZero",
+  "HostFeeTooHigh", "WindowSlotsOutOfRange", "VrfTimeoutOutOfRange", "MaxEntryBpsOutOfRange", "MaxEntryAmountTooSmall",
   "MetadataTooLong", "QuoteMintHasFreezeAuthority", "QuoteMintHasTransferFee", "QuoteMintHasTransferHook",
   "QuoteMintHasPermanentDelegate", "QuoteMintUnknownProgram",
   "WindowStillOpen", "WrongPreviousWindow", "WrongWindowState", "WindowClosed", "WindowNotClosed", "WindowFull",
@@ -17,6 +17,10 @@ export const PULLED_ERRORS = [
   "Overflow",
   "EntryNotClosable", "EntriesStillOpen", "WindowIsActive",
   "AlreadyEntered",
+  "EntryTooSmall",
+  "TooManyWindowsPending", "VrfRequestTooCostly", "WindingDown",
+  "SlippageExceeded", "NoticeAlreadyStarted", "NoticeNotOver", "MarketNotDrained",
+  "QuoteMintNotWsol",
 ] as const;
 export type PulledErrorName = (typeof PULLED_ERRORS)[number];
 
@@ -32,13 +36,13 @@ export const PULLED_ERROR_MESSAGES: Record<PulledErrorName, string> = {
   WindowSlotsOutOfRange: "window length out of the allowed range",
   VrfTimeoutOutOfRange: "randomness timeout too short or not longer than the window",
   MaxEntryBpsOutOfRange: "per-entry cap out of [5 %, 100 %]",
-  MaxEntryAmountZero: "maximum entry amount must be above zero",
+  MaxEntryAmountTooSmall: "maximum entry amount below the minimum stake (0.1 SOL)",
   MetadataTooLong: "token name, symbol or uri too long",
   QuoteMintHasFreezeAuthority: "the quote token has a freeze authority",
   QuoteMintHasTransferFee: "the quote token charges a transfer fee",
   QuoteMintHasTransferHook: "the quote token has a transfer hook",
   QuoteMintHasPermanentDelegate: "the quote token has a permanent delegate",
-  QuoteMintUnknownProgram: "the quote token is not an SPL token",
+  QuoteMintUnknownProgram: "the quote token is not a classic SPL token (Token-2022 is refused)",
   WindowStillOpen: "the current round is still open",
   WrongPreviousWindow: "wrong previous round",
   WrongWindowState: "the round is not at the step this action needs",
@@ -79,9 +83,18 @@ export const PULLED_ERROR_MESSAGES: Record<PulledErrorName, string> = {
   PlatformAccountMismatch: "wrong platform fee account",
   Overflow: "arithmetic overflow",
   EntryNotClosable: "this entry still has tokens to claim or a stake to refund",
-  EntriesStillOpen: "every entry of the round must be closed first",
+  EntriesStillOpen: "every stake of the refunded round must be returned first",
   WindowIsActive: "the current round cannot be closed",
   AlreadyEntered: "this wallet already has an entry in this round",
+  EntryTooSmall: "the smallest stake is 0.1 SOL",
+  TooManyWindowsPending: "eight rounds are waiting to settle: no new round opens until the oldest one finishes",
+  VrfRequestTooCostly: "the randomness request would cost more than 0.01 SOL: refused",
+  WindingDown: "this program is winding down: no new round or entry",
+  SlippageExceeded: "the price moved since your quote (other sales landed first): nothing was sold, check the new price",
+  NoticeAlreadyStarted: "the closing notice of this market has already started",
+  NoticeNotOver: "the closing notice is not over yet",
+  MarketNotDrained: "the market still has rounds or LADLE out: it cannot close yet",
+  QuoteMintNotWsol: "markets are quoted in SOL (wrapped SOL) only",
 };
 
 export function errorMessage(name: PulledErrorName): string {

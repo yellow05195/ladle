@@ -20,7 +20,7 @@ export function eventDiscriminator(name: string): Uint8Array {
 export const EVENT_NAMES: readonly PulledEventName[] = [
   "WindowOpened", "Entered", "WindowSealed", "VrfRequested", "WindowDrawn", "WindowTallied",
   "EntrySettled", "WindowSettled", "Claimed", "SoldBack", "Sold", "WindowRefunding", "EntryRefunded",
-  "EntryClosed", "WindowClosed",
+  "EntryClosed", "WindowClosed", "WindDownStarted", "ForcedExit", "MarketClosed",
 ];
 
 const EVENT_DISC = new Map<string, PulledEventName>(
@@ -41,7 +41,7 @@ export function decodeEvent(payload: Uint8Array): PulledEvent | null {
     case "WindowSealed":
       return { name, window: r.pubkey(), index: r.u64(), totalAmount: r.u64(), entryCount: r.u32(), sealedSlot: r.u64(), empty: r.bool(), vrfSeed: r.bytes(32) };
     case "VrfRequested":
-      return { name, window: r.pubkey(), request: r.pubkey(), seed: r.bytes(32) };
+      return { name, window: r.pubkey(), request: r.pubkey(), seed: r.bytes(32), salt: r.bytes(32), payer: r.pubkey() };
     case "WindowDrawn":
       return { name, window: r.pubkey(), seed: r.bytes(64) };
     case "WindowTallied":
@@ -64,6 +64,12 @@ export function decodeEvent(payload: Uint8Array): PulledEvent | null {
       return { name, window: r.pubkey(), index: r.u32(), owner: r.pubkey() };
     case "WindowClosed":
       return { name, window: r.pubkey(), index: r.u64(), opener: r.pubkey(), dustSwept: r.u64() };
+    case "WindDownStarted":
+      return { name, market: r.pubkey(), noticeStart: BigInt.asIntN(64, r.u64()), exitAfter: BigInt.asIntN(64, r.u64()) };
+    case "ForcedExit":
+      return { name, window: r.pubkey(), index: r.u32(), owner: r.pubkey(), tokensSold: r.u64(), paid: r.u64(), refunded: r.bool() };
+    case "MarketClosed":
+      return { name, market: r.pubkey(), creator: r.pubkey(), tokensBurned: r.u64(), quoteLeft: r.u64() };
   }
 }
 

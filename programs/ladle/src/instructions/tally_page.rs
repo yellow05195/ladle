@@ -11,8 +11,11 @@ use crate::state::{check_page, Integration, Market, Window, WindowState};
 
 /// `tally_page(from, to)`
 ///
-/// * Who: anyone (the payer of the finalizing page receives the keeper
-///   bounty into `keeper_quote_account`).
+/// * Who: anyone. The keeper bounty goes to `keeper_quote_account`: any
+///   quote account for a window that never asked ORAO (one entry), and only
+///   the quote ATA of `window.vrf_payer` (who paid ORAO) for one that did;
+///   with any other account that bounty goes to the platform treasury, so
+///   racing the keeper to the final page earns nothing.
 /// * State: window `Drawn`. Pages are strictly ordered by `tally_cursor`:
 ///   `from == tally_cursor` processes, `to <= tally_cursor` is a no-op
 ///   replay, anything else fails. `to - from <= MAX_PAGE`.
@@ -25,11 +28,19 @@ use crate::state::{check_page, Integration, Market, Window, WindowState};
 ///   platform fee / host fee / to_curve, executes ONE curve buy with
 ///   `to_curve`, freezes `tokens_out`, `roll_sum` and the fees in the
 ///   window, moves the escrow out (curve -> quote_vault, platform fee minus
-///   bounty -> treasury ATA, bounty -> payer's quote account, host fee ->
-///   host ATA), state -> `Tallied`.
+///   bounty -> treasury ATA, bounty -> `keeper_quote_account` as above, host
+///   fee -> host ATA), state -> `Tallied`.
 /// * The finalization accounts are always required (pass them on every
 ///   page); `integration` / `host_quote_account` may be the program id when
 ///   the market has no integration.
+/// * Host fee: paid to the host's associated token account; when that
+///   account does not exist (the host closed it, or never made one) the
+///   round's host fee stays in its buy (`to_curve`, the players' tokens).
+///   Final review (2026-10-29): before, a missing host account failed the
+///   final page, and since rounds settle in order a host could hold every
+///   later round of its market (a `Drawn` round has no refund path), or
+///   make a keeper re-create the account for it again and again and keep
+///   the rent each time; nobody has to pay for that account any more.
 /// * Never: executes the curve more than once per window, or for anything
 ///   but the window total net of fees.
 #[derive(Accounts)]
@@ -67,17 +78,20 @@ pub struct TallyPage<'info> {
     #[account(mut, token::mint = quote_mint, token::token_program = quote_token_program)]
     pub platform_quote_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    /// Any quote token account chosen by the payer; receives the bounty.
+    /// Receives the bounty (see above); the platform treasury gets it when
+    /// this is not the request payer's ATA for a window that asked ORAO.
     #[account(mut, token::mint = quote_mint, token::token_program = quote_token_program)]
     pub keeper_quote_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// Required (and must equal `market.integration`) when the market has one.
     pub integration: Option<Box<Account<'info, Integration>>>,
 
-    /// Host's associated token account for the quote mint; required when the
-    /// market has an integration.
+    /// CHECK: the host's associated token account for the quote mint
+    /// (address checked in `finalize`); required when the market has an
+    /// integration. It may not exist: that round's host fee then stays in
+    /// the buy. Written only by the token program's transfer.
     #[account(mut)]
-    pub host_quote_account: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
+    pub host_quote_account: Option<UncheckedAccount<'info>>,
 
     #[account(address = market.quote_program)]
     pub quote_token_program: Interface<'info, TokenInterface>,
@@ -136,6 +150,18 @@ pub fn payout(fees: &law::FeeSplit) -> Payout {
     Payout { bounty, platform_net }
 }
 
+/// `(to the keeper account, to the treasury)`: the bounty joins the
+/// platform's part when it may not go to the given keeper account. The two
+/// always add up to the platform fee.
+pub fn route_bounty(bounty: u64, platform_net: u64, to_keeper: bool) -> (u64, u64) {
+    if to_keeper {
+        (bounty, platform_net)
+    } else {
+        // platform_net + bounty == the platform fee <= total: no overflow
+        (0, platform_net + bounty)
+    }
+}
+
 /// Last page: fee split, the single curve buy, escrow payout.
 fn finalize<'info>(accs: &mut TallyPage<'info>) -> Result<()> {
     let market_key = accs.market.key();
@@ -161,7 +187,7 @@ fn finalize<'info>(accs: &mut TallyPage<'info>) -> Result<()> {
         LadleError::PlatformAccountMismatch
     );
 
-    // --- host fee (0 without integration) ---
+    // --- host fee (0 without integration, or when the host has no account: it stays in the buy) ---
     let host_fee_bps: u16 = if accs.market.integration == Pubkey::default() {
         0
     } else {
@@ -183,12 +209,28 @@ fn finalize<'info>(accs: &mut TallyPage<'info>) -> Result<()> {
             &quote_program_key,
         );
         require!(host_acc.key() == expected_host_ata, LadleError::HostAccountMismatch);
-        integration.host_fee_bps
+        // the address is the ATA program's PDA: only it can create an account there,
+        // as a token account of this mint (or nothing: closed, or never made)
+        if host_acc.data_is_empty() {
+            0
+        } else {
+            integration.host_fee_bps
+        }
     };
 
     let total = accs.window.total_amount;
     let fees = law::split_fees(total, host_fee_bps)?;
     let Payout { bounty, platform_net } = payout(&fees);
+
+    // --- the bounty pays whoever paid ORAO, not whoever sends this page ---
+    let to_keeper = !accs.window.vrf_requested
+        || accs.keeper_quote_account.key()
+            == get_associated_token_address_with_program_id(
+                &accs.window.vrf_payer,
+                &quote_mint_key,
+                &quote_program_key,
+            );
+    let (keeper_bounty, platform_paid) = route_bounty(bounty, platform_net, to_keeper);
 
     // --- the single curve buy ---
     let (tokens_out, new_curve) = accs.market.curve.buy(fees.to_curve)?;
@@ -204,7 +246,7 @@ fn finalize<'info>(accs: &mut TallyPage<'info>) -> Result<()> {
         window.state = WindowState::Tallied;
     }
 
-    // --- escrow payout: to_curve + (platform_net + bounty) + host == total ---
+    // --- escrow payout: to_curve + (platform_paid + keeper_bounty) + host == total ---
     let index_bytes = accs.window.index.to_le_bytes();
     let bump = [accs.window.bump];
     let signer_seeds: &[&[u8]] = &[WINDOW_SEED, market_key.as_ref(), &index_bytes, &bump];
@@ -234,8 +276,8 @@ fn finalize<'info>(accs: &mut TallyPage<'info>) -> Result<()> {
     };
 
     pay(accs.quote_vault.to_account_info(), fees.to_curve)?;
-    pay(accs.platform_quote_account.to_account_info(), platform_net)?;
-    pay(accs.keeper_quote_account.to_account_info(), bounty)?;
+    pay(accs.platform_quote_account.to_account_info(), platform_paid)?;
+    pay(accs.keeper_quote_account.to_account_info(), keeper_bounty)?;
     if fees.host > 0 {
         let host_acc = accs
             .host_quote_account
@@ -253,7 +295,7 @@ fn finalize<'info>(accs: &mut TallyPage<'info>) -> Result<()> {
         to_curve: fees.to_curve,
         fee_platform: fees.platform,
         fee_host: fees.host,
-        keeper_bounty: bounty,
+        keeper_bounty,
     });
     Ok(())
 }
@@ -278,6 +320,16 @@ mod tests {
                 assert!(p.bounty <= fees.platform);
             }
         }
+    }
+
+    #[test]
+    fn a_redirected_bounty_goes_to_the_treasury_in_full() {
+        let fees = law::split_fees(123_456_789, 0).unwrap();
+        let p = payout(&fees);
+        assert_eq!(route_bounty(p.bounty, p.platform_net, true), (p.bounty, p.platform_net));
+        let (k, t) = route_bounty(p.bounty, p.platform_net, false);
+        assert_eq!((k, t), (0, fees.platform));
+        assert_eq!(fees.to_curve + k + t + fees.host, 123_456_789);
     }
 
     #[test]

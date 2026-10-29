@@ -9,11 +9,22 @@ use crate::state::{Market, Window, WindowState};
 
 /// `open_window()`
 ///
-/// * Who: anyone (payer pays the Window + escrow rent).
+/// * Who: anyone (payer pays the Window rent, and the escrow rent unless
+///   someone already created the escrow).
 /// * State: the market has no active window, or its active window is no
 ///   longer `Open` (Sealed or later: the previous window can settle while
 ///   the next one runs). `prev_window` must be that active window when one
-///   exists; pass the program id otherwise.
+///   exists; pass the program id otherwise. Fewer than
+///   `MAX_WINDOWS_IN_FLIGHT` windows wait to settle
+///   (`window_count - next_settle_index`): rounds settle in index order, so
+///   when one cannot finish, the rounds behind it stop opening instead of
+///   taking stakes that would all wait behind it (`TooManyWindowsPending`).
+///   Refused by the wind-down build (`WindingDown`).
+/// * Effect on the market: `window_count += 1`, the new window is the active
+///   one, `live_windows += 1` (counted markets), and `notice_start = 0`: a
+///   round opening means the game runs, so a shutdown notice started by an
+///   earlier wind-down build no longer counts (a later shutdown needs a new
+///   `start_wind_down` and a full notice).
 /// * Never: changes any market parameter; the window length is
 ///   `market.window_slots`, fixed at creation.
 #[derive(Accounts)]
@@ -44,8 +55,15 @@ pub struct OpenWindow<'info> {
     #[account(address = market.quote_mint)]
     pub quote_mint: InterfaceAccount<'info, Mint>,
 
+    /// The window PDA's ATA for the quote mint. `init_if_needed`: the address
+    /// of every future window is public, and anyone can create an ATA for it
+    /// with the ATA program; a plain `init` would then fail forever and no
+    /// window could open again. An existing account is checked instead (mint,
+    /// owner = this window, token program, ATA address); only the window PDA
+    /// can set a delegate or a close authority on it, and whatever balance a
+    /// stranger left there is swept into the quote vault by `close_window`.
     #[account(
-        init,
+        init_if_needed,
         payer = payer,
         associated_token::mint = quote_mint,
         associated_token::authority = window,
@@ -60,7 +78,16 @@ pub struct OpenWindow<'info> {
 }
 
 pub fn handle_open_window(ctx: Context<OpenWindow>) -> Result<()> {
+    require!(!WIND_DOWN, LadleError::WindingDown);
     let market = &mut ctx.accounts.market;
+
+    // next_settle_index <= window_count always (the cursor only passes
+    // windows that exist); stay checked.
+    let pending = market
+        .window_count
+        .checked_sub(market.next_settle_index)
+        .ok_or(LadleError::Overflow)?;
+    require!(pending < MAX_WINDOWS_IN_FLIGHT, LadleError::TooManyWindowsPending);
 
     if market.has_active_window {
         let prev = ctx
@@ -106,13 +133,19 @@ pub fn handle_open_window(ctx: Context<OpenWindow>) -> Result<()> {
     window.escrow = ctx.accounts.escrow.key();
     window.bump = ctx.bumps.window;
     window.opener = ctx.accounts.payer.key();
-    window.closed_entries = 0;
+    window.refunded_entries = 0;
+    window.vrf_payer = Pubkey::default();
+    window.reserved = [0u8; 64];
 
     // window_count is a u64 counter incremented once per window: cannot
     // realistically overflow, but stay checked.
     market.window_count = index.checked_add(1).ok_or(LadleError::Overflow)?;
     market.has_active_window = true;
     market.active_window = index;
+    if market.counts_windows {
+        market.live_windows = market.live_windows.checked_add(1).ok_or(LadleError::Overflow)?;
+    }
+    market.notice_start = 0;
 
     emit!(WindowOpened {
         market: market.key(),

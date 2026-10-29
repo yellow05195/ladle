@@ -1,0 +1,77 @@
+# Docker alternative to the systemd units: keeper + relay + Caddy (TLS).
+# Same files as the systemd setup: /etc/ladle/keeper.env, /etc/ladle/chat.env
+# (root:root 0600, read by Docker), /etc/ladle/keeper.json
+# (root:ladle-keeper 0640, mounted into the keeper only), /var/lib/ladle/mute.txt.
+#
+#   cd /srv/ladle
+#   LADLE_UID=$(id -u ladle) LADLE_GID=$(id -g ladle) \
+#   LADLE_KEEPER_UID=$(id -u ladle-keeper) LADLE_KEEPER_GID=$(id -g ladle-keeper) \
+#     docker compose -f deploy/compose.yaml up -d --build
+#   docker compose -f deploy/compose.yaml logs -f keeper
+#
+# Only Caddy publishes ports; the keeper's /health and the relay listen on the
+# compose network.
+name: ladle
+
+x-ops: &ops
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  image: ladle-ops
+  # the host's ladle user (the relay); the keeper overrides it below
+  user: "${LADLE_UID:-999}:${LADLE_GID:-999}"
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  keeper:
+    <<: *ops
+    # the host's ladle-keeper user: the only one that can read its key (0640 root:ladle-keeper)
+    user: "${LADLE_KEEPER_UID:-998}:${LADLE_KEEPER_GID:-998}"
+    command: ["node", "--experimental-strip-types", "--no-warnings", "keeper/src/index.ts"]
+    env_file: /etc/ladle/keeper.env
+    environment:
+      KEEPER_KEYPAIR: /etc/ladle/keeper.json
+      KEEPER_HEALTH_HOST: 0.0.0.0
+      KEEPER_HEALTH_PORT: "8788"
+    volumes:
+      - /etc/ladle/keeper.json:/etc/ladle/keeper.json:ro
+    # like the systemd unit (Restart=on-failure): a drained keeper exits 0 and stays down. A configuration error
+    # exits 2, which Docker counts as a failure: at most 5 restarts, then it stays down (systemd: none, RestartPreventExitStatus=2)
+    restart: "on-failure:5"
+    # SIGTERM: the current tick ends, then exit (25 s at most)
+    stop_grace_period: 40s
+
+  chat:
+    <<: *ops
+    command: ["node", "--experimental-strip-types", "--no-warnings", "chat/src/index.ts"]
+    env_file: /etc/ladle/chat.env
+    environment:
+      CHAT_HOST: 0.0.0.0
+      CHAT_PORT: "8787"
+      CHAT_MUTE_FILE: /var/lib/ladle/mute.txt
+    volumes:
+      - /var/lib/ladle:/var/lib/ladle:ro
+    stop_grace_period: 15s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      LADLE_CHAT_HOST: ${LADLE_CHAT_HOST:-chat.useladle.fun}
+      LADLE_CHAT_UPSTREAM: chat:8787
+      LADLE_KEEPER_UPSTREAM: keeper:8788
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [chat, keeper]
+
+volumes:
+  caddy_data:
+  caddy_config:

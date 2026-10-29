@@ -16,6 +16,8 @@ marketing/
 # secrets and local config: never in the repo
 .env
 .env.*
+# the app's template has no secret: every NEXT_PUBLIC_ value ships to the browser
+!app/.env.example
 *.keypair.json
 *-keypair.json
 id.json

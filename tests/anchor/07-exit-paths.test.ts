@@ -1,13 +1,14 @@
 /**
- * TEST 7 - sell_back, claim and refund work while nothing else is callable.
+ * TEST 7 - sell_back and refund work while nothing else is callable (no
+ * claim since v25: LADLE never leaves the game to a wallet).
  *
  * There is no freeze/pause in the program, so the property to assert is that
- * these exit paths need nothing beyond the user: the only signer of claim and
+ * these exit paths need nothing beyond the user: the only signer of
  * sell_back is the entry owner, refund_entry has no signer but the fee payer,
  * and no account of theirs is an authority or config account.
  */
 import assert from "node:assert/strict";
-import { INSTRUCTION_NAMES, claimIx, refundEntryIx, sellBackIx, type Market } from "@pulled/sdk";
+import { INSTRUCTION_NAMES, refundEntryIx, sellBackIx, type Market } from "@pulled/sdk";
 import { Keypair } from "@solana/web3.js";
 import { createMarket, env, participant, runWindow, send, tokenBalance, type Ctx, type MarketCtx } from "./setup.ts";
 
@@ -16,22 +17,21 @@ describe("7. exit paths need only the user", function () {
   let ctx: Ctx; let m: MarketCtx;
   before(async () => { ctx = env(); m = await createMarket(ctx); });
 
-  it("instruction surface: the signer sets of claim / sell_back / refund_entry", () => {
+  it("instruction surface: the signer sets of sell_back / refund_entry; no claim", () => {
     const k = () => Keypair.generate().publicKey;
     const owner = k();
-    const c = claimIx({ owner, market: k(), window: k(), entry: k(), tokenMint: k(), tokenVault: k(), ownerTokenAccount: k() });
-    assert.deepEqual(c.keys.filter((x) => x.isSigner).map((x) => x.pubkey.toBase58()), [owner.toBase58()]);
-    const s = sellBackIx({ owner, market: k(), window: k(), entry: k(), quoteMint: k(), quoteVault: k(), ownerQuote: k(), quoteTokenProgram: k() }, 1n);
+    assert.ok(!(INSTRUCTION_NAMES as readonly string[]).includes("claim"));
+    const s = sellBackIx({ owner, market: k(), entry: k(), quoteMint: k(), quoteVault: k(), ownerQuote: k(), quoteTokenProgram: k() }, 1n, 0n);
     assert.deepEqual(s.keys.filter((x) => x.isSigner).map((x) => x.pubkey.toBase58()), [owner.toBase58()]);
     const r = refundEntryIx({ market: k(), window: k(), entry: k(), quoteMint: k(), escrow: k(), recipient: k(), quoteTokenProgram: k() });
     assert.equal(r.keys.filter((x) => x.isSigner).length, 0);
     assert.ok(!INSTRUCTION_NAMES.some((n) => /pause|freeze|admin|authority/.test(n)));
   });
 
-  it("sell_back pays the exact law.ts quote; claim moves the rest; both signed by the owner only", async () => {
+  it("sell_back pays the exact law.ts quote, in two sales signed by the owner only", async () => {
     const a = await participant(ctx, m, 10n ** 9n);
     const b = await participant(ctx, m, 10n ** 9n);
-    const w = await runWindow(ctx, m, [{ p: a, amount: 3_000_000n }, { p: b, amount: 7_000_000n }]);
+    const w = await runWindow(ctx, m, [{ p: a, amount: 300_000_000n }, { p: b, amount: 700_000_000n }]);
     const entries = await ctx.client.getEntries(w.pubkey);
     const mine = entries.find((e) => e.account.owner.equals(a.kp.publicKey))!;
 
@@ -48,22 +48,19 @@ describe("7. exit paths need only the user", function () {
     const after = (await ctx.client.getMarket(m.market)).account;
     assert.deepEqual(after.curve, q.curveAfter, "curve moved exactly as predicted");
 
-    // claim the rest
-    const tx2 = await ctx.client.claim({ entry: mine.pubkey, owner: a.kp.publicKey });
+    // sell the rest (the SDK closes the entry in the same transaction)
+    const tx2 = await ctx.client.sellBack({ entry: mine.pubkey, owner: a.kp.publicKey });
     tx2.sign(a.kp);
     const sig2 = await ctx.connection.sendRawTransaction(tx2.serialize());
     await ctx.connection.confirmTransaction({ signature: sig2, blockhash: tx2.recentBlockhash!, lastValidBlockHeight: tx2.lastValidBlockHeight! }, "confirmed");
-    const e2 = (await ctx.client.getEntry(mine.pubkey)).account;
-    assert.equal(e2.claimed, e2.share);
-    const tokenAta = ctx.client.getEntriesByOwner; // keep the API referenced for readers
-    void tokenAta;
-    // nothing left: a second claim is refused
+    assert.equal(await ctx.connection.getAccountInfo(mine.pubkey, "confirmed"), null, "everything sold: the entry closed");
+    // nothing left: another sale is refused
     let failed = false;
     try {
-      const tx3 = await ctx.client.claim({ entry: mine.pubkey, owner: a.kp.publicKey });
-      tx3.sign(a.kp);
-      await send(ctx, [...tx3.instructions], [a.kp], a.kp);
+      const k = () => Keypair.generate().publicKey;
+      const again = sellBackIx({ owner: a.kp.publicKey, market: m.market, entry: mine.pubkey, quoteMint: k(), quoteVault: mk.quoteVault, ownerQuote: a.quote, quoteTokenProgram: m.quoteProgram }, 1n, 0n);
+      await send(ctx, [again], [a.kp], a.kp);
     } catch { failed = true; }
-    assert.ok(failed, "NothingToClaim");
+    assert.ok(failed, "the entry is gone");
   });
 });

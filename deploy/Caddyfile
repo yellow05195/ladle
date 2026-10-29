@@ -1,0 +1,23 @@
+# /etc/caddy/Caddyfile (deploy/install.sh copies it; Docker: deploy/compose.yaml mounts it)
+#
+# TLS for the chat relay (wss://chat.useladle.fun) and a public view of both
+# health checks for an uptime monitor:
+#   https://chat.useladle.fun/health          the relay
+#   https://chat.useladle.fun/keeper/health   the keeper (200 ok, 503 + reasons)
+# Caddy gets and renews the certificate itself once the DNS A/AAAA record of
+# the host points at this machine and ports 80 and 443 are open.
+# reverse_proxy carries the WebSocket upgrade and sets X-Forwarded-For (the
+# relay reads it with CHAT_TRUST_PROXY=1).
+{$LADLE_CHAT_HOST:chat.useladle.fun} {
+	handle /keeper/health {
+		rewrite * /health
+		reverse_proxy {$LADLE_KEEPER_UPSTREAM:127.0.0.1:8788}
+	}
+	handle {
+		reverse_proxy {$LADLE_CHAT_UPSTREAM:127.0.0.1:8787}
+	}
+	log {
+		output stdout
+		format json
+	}
+}

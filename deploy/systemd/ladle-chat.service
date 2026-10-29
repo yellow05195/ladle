@@ -1,0 +1,55 @@
+# /etc/systemd/system/ladle-chat.service (deploy/install.sh copies it)
+#
+# The Ladle room relay (docs/CHAT.md): no keys, no RPC. Caddy terminates TLS
+# in front of it (deploy/Caddyfile), so pages connect with wss://.
+# Settings: /etc/ladle/chat.env (CHAT_RESUME_SECRET and the rest; template
+# deploy/chat.env.example), root:root 0600: systemd reads it. Mute list:
+# /var/lib/ladle/mute.txt (re-read within 2 s of a change). It faces the
+# internet, so it runs as `ladle`, a user that cannot read the keeper's key or
+# settings (root:ladle-keeper 0640, root:root 0600), and the keeper's files
+# are also hidden from it below.
+#
+#   sudo systemctl enable --now ladle-chat
+#   journalctl -u ladle-chat -f
+#   curl -s 127.0.0.1:8787/health
+[Unit]
+Description=Ladle room relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ladle
+Group=ladle
+WorkingDirectory=/srv/ladle
+EnvironmentFile=/etc/ladle/chat.env
+ExecStart=/usr/bin/node --experimental-strip-types --no-warnings chat/src/index.ts
+# SIGTERM: says "bye" to every page (they reconnect and resume) and exits
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Restart=always
+RestartSec=2
+MemoryMax=768M
+LimitNOFILE=65536
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+ReadOnlyPaths=/srv/ladle /var/lib/ladle
+InaccessiblePaths=-/etc/ladle/keeper.json -/etc/ladle/keeper.env
+
+[Install]
+WantedBy=multi-user.target

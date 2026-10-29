@@ -30,7 +30,7 @@ describe("1. sum conserved on chain (50 windows)", function () {
     for (let n = 0; n < 50; n++) {
       const k = 1 + (next() % 6);
       const stakes = [];
-      for (let i = 0; i < k; i++) stakes.push({ p: players[i]!, amount: 1_000n + BigInt(next() % 5_000_000) });
+      for (let i = 0; i < k; i++) stakes.push({ p: players[i]!, amount: 100_000_000n + BigInt(next() % 5_000_000) * 100n });
       const vaultBefore = await tokenBalance(ctx, (await ctx.client.getMarket(m.market)).account.quoteVault, m.quoteProgram);
 
       const w = await runWindow(ctx, m, stakes);

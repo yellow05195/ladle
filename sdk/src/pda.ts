@@ -14,8 +14,44 @@ import {
 
 /** PLACEHOLDER program id (see programs/pulled/src/lib.rs and Anchor.toml). */
 export const PULLED_PROGRAM_ID = new PublicKey("85ig2nch9XBAeGbdhj613vipBufxsw1eWH4Eyw7QbgFj");
-/** PLACEHOLDER platform treasury (consts.rs). */
+/**
+ * The DEVNET platform treasury: the default `LADLE_TREASURY` of the program
+ * build (consts.rs). A build for another cluster embeds its own treasury;
+ * pass that one to the client (`PulledClientOptions.treasury`, resolved with
+ * `resolveTreasury`), never this default.
+ */
 export const PLATFORM_TREASURY = new PublicKey("A7iPUhYk87cek8n7FMYEG62LRQoyHEK8wFwjGFQdDSat");
+
+export type LadleCluster = "mainnet-beta" | "devnet" | "localnet";
+
+/**
+ * Treasury compiled into each cluster's build when no other key is given.
+ * mainnet-beta has none on purpose: its treasury is configuration (the
+ * `LADLE_TREASURY` the program was built with), not a value in this file.
+ */
+export const DEFAULT_TREASURIES: Readonly<Record<LadleCluster, PublicKey | null>> = {
+  "mainnet-beta": null,
+  devnet: PLATFORM_TREASURY,
+  localnet: PLATFORM_TREASURY,
+};
+
+/**
+ * The platform treasury to use on `cluster`: `configured` (e.g.
+ * `process.env.LADLE_TREASURY` or a deployment file's `treasury`) when set,
+ * else the cluster's default. Throws on mainnet-beta without one, so a
+ * mainnet keeper or market script cannot fall back to the devnet key. A
+ * treasury that differs from the program's build fails on chain
+ * (`PlatformAccountMismatch` / the `create_market` address check) without
+ * moving funds.
+ */
+export function resolveTreasury(cluster: LadleCluster, configured?: string | PublicKey | null): PublicKey {
+  if (configured instanceof PublicKey) return configured;
+  const s = configured?.trim();
+  if (s) return new PublicKey(s);
+  const fallback = DEFAULT_TREASURIES[cluster];
+  if (!fallback) throw new Error(`no platform treasury configured for ${cluster}: set LADLE_TREASURY to the key the program was built with`);
+  return fallback;
+}
 
 /** ORAO VRF program (devnet and mainnet). */
 export const ORAO_VRF_ID = new PublicKey("VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y");
@@ -28,9 +64,13 @@ export const INTEGRATION_SEED = "integration";
 export const MARKET_SEED = "market";
 export const WINDOW_SEED = "window";
 export const ENTRY_SEED = "entry";
+/** ["unwrap", entry]: the wSOL account force_exit opens and closes to pay an owner in SOL. */
+export const UNWRAP_SEED = "unwrap";
 
 /** Domain tag of the VRF seed derivation (`VRF_SEED_DOMAIN`). */
 export const VRF_SEED_DOMAIN = "ladle:vrf:v1";
+/** Domain tag of the seed `request_vrf` asks ORAO for (`VRF_REQUEST_DOMAIN`). */
+export const VRF_REQUEST_DOMAIN = "ladle:vrf:req";
 
 /* ------------------------------ constants ------------------------------ */
 
@@ -44,7 +84,26 @@ export const MARKET_CREATION_FEE_LAMPORTS = 50_000_000n;
 export const MIN_WINDOW_SLOTS = 25n;
 export const MAX_WINDOW_SLOTS = 600n;
 export const MIN_VRF_TIMEOUT_SLOTS = 150n;
+/** Upper bound of a market's VRF timeout (`MAX_VRF_TIMEOUT_SLOTS`, ~32 min). */
+export const MAX_VRF_TIMEOUT_SLOTS = 9_000n;
+/**
+ * `open_window` refuses a new round while this many wait to settle
+ * (`window_count - next_settle_index`, `MAX_WINDOWS_IN_FLIGHT`): rounds
+ * settle in order, so one that cannot finish stops the next ones from
+ * taking stakes.
+ */
+export const MAX_WINDOWS_IN_FLIGHT = 8n;
+/** Most `request_vrf` may take from its payer across the ORAO CPI (`MAX_VRF_REQUEST_COST_LAMPORTS`). */
+export const MAX_VRF_REQUEST_COST_LAMPORTS = 10_000_000n;
+/** Smallest stake `enter` accepts (`MIN_ENTRY_AMOUNT`, quote base units: 0.1 SOL). */
+export const MIN_ENTRY_AMOUNT = 100_000_000n;
 export const KEEPER_BOUNTY_BPS_OF_PLATFORM_FEE = 1_000n;
+/**
+ * Closing notice of the wind-down build (`WIND_DOWN_NOTICE_SECS`): 7 days
+ * between `start_wind_down` and the first `force_exit` / `close_market`
+ * (10 minutes in a devnet `rehearsal` build).
+ */
+export const WIND_DOWN_NOTICE_SECS = 7n * 24n * 60n * 60n;
 
 /**
  * Measured defaults for `create_market` (research/G6.md, research/G2.md):
@@ -120,6 +179,11 @@ export function entryPda(window: PublicKey, owner: PublicKey, programId = PULLED
   return PublicKey.findProgramAddressSync([enc.encode(ENTRY_SEED), window.toBytes(), owner.toBytes()], programId);
 }
 
+/** The PDA ["unwrap", entry] a wSOL `force_exit` pays through (`payout`). */
+export function unwrapPda(entry: PublicKey, programId = PULLED_PROGRAM_ID): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([enc.encode(UNWRAP_SEED), entry.toBytes()], programId);
+}
+
 /** Associated token account; `allowOwnerOffCurve` so PDAs (market, window) work. */
 export function ata(mint: PublicKey, owner: PublicKey, tokenProgram: PublicKey = TOKEN_PROGRAM_ID): PublicKey {
   return getAssociatedTokenAddressSync(mint, owner, true, tokenProgram, ASSOCIATED_TOKEN_PROGRAM_ID);
@@ -141,8 +205,8 @@ export function escrowAta(window: PublicKey, quoteMint: PublicKey, quoteProgram:
 }
 
 /** Platform treasury's ATA for a quote mint (`platform_quote_account`). */
-export function platformQuoteAta(quoteMint: PublicKey, quoteProgram: PublicKey): PublicKey {
-  return ata(quoteMint, PLATFORM_TREASURY, quoteProgram);
+export function platformQuoteAta(quoteMint: PublicKey, quoteProgram: PublicKey, treasury: PublicKey = PLATFORM_TREASURY): PublicKey {
+  return ata(quoteMint, treasury, quoteProgram);
 }
 
 /* -------------------------------- ORAO -------------------------------- */
@@ -186,7 +250,23 @@ export function deriveVrfSeed(window: PublicKey, closeSlot: bigint, entryCount: 
   return sha256(concatBytes(enc.encode(VRF_SEED_DOMAIN), window.toBytes(), u64Le(closeSlot), u32Le(entryCount), commitment));
 }
 
-/** The ORAO request account a window will use, from the window's public fields. */
-export function vrfRequestForWindow(window: PublicKey, closeSlot: bigint, entryCount: number, commitment: Uint8Array): PublicKey {
-  return oraoRandomnessPda(deriveVrfSeed(window, closeSlot, entryCount, commitment))[0];
+/**
+ * The seed `request_vrf(salt)` asks ORAO for: `sha256("ladle:vrf:req" || seal seed || salt)`.
+ * The seal seed (`deriveVrfSeed`) is public from the close slot on, and ORAO
+ * takes each seed once, from anyone: the salt, chosen in the request itself,
+ * keeps a stranger from using the window's seed up first.
+ */
+export function deriveRequestSeed(sealSeed: Uint8Array, salt: Uint8Array): Uint8Array {
+  if (sealSeed.length !== 32 || salt.length !== 32) throw new Error("seal seed and salt must be 32 bytes");
+  return sha256(concatBytes(enc.encode(VRF_REQUEST_DOMAIN), sealSeed, salt));
+}
+
+/** A fresh 32-byte salt for `request_vrf` (one per attempt). */
+export function newVrfSalt(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(32));
+}
+
+/** The ORAO request account `request_vrf(salt)` creates for a window's seal seed. */
+export function vrfRequestFor(sealSeed: Uint8Array, salt: Uint8Array): PublicKey {
+  return oraoRandomnessPda(deriveRequestSeed(sealSeed, salt))[0];
 }

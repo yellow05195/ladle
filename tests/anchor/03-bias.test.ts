@@ -14,7 +14,7 @@
  */
 import assert from "node:assert/strict";
 import { Keypair } from "@solana/web3.js";
-import { WindowState, deriveVrfSeed, deriveRoll, oraoRandomnessPda, requestVrfIx, oraoNetworkStatePda } from "@pulled/sdk";
+import { WindowState, deriveVrfSeed, deriveRoll, newVrfSalt, oraoRandomnessPda, requestVrfIx, oraoNetworkStatePda } from "@pulled/sdk";
 import {
   createMarket, currentSlot, enter, env, expectError, fulfill, fund, openWindow, participant, sealAndRequest, send, settleAll, tallyAll,
   waitFulfilled, waitForSlot, type Ctx, type MarketCtx,
@@ -30,14 +30,14 @@ describe("3. bias attempts", function () {
     const a = await participant(ctx, m, 10n ** 9n);
     const b = await participant(ctx, m, 10n ** 9n);
     const c = await participant(ctx, m, 10n ** 9n);
-    await enter(ctx, m, window, a, 1_000_000n);
-    await enter(ctx, m, window, b, 2_000_000n);
+    await enter(ctx, m, window, a, 100_000_000n);
+    await enter(ctx, m, window, b, 200_000_000n);
     // one entry per wallet per window: a second stake from the same wallet is refused
-    await expectError(enter(ctx, m, window, a, 1_000n), "AlreadyEntered");
+    await expectError(enter(ctx, m, window, a, 100_000n), "AlreadyEntered");
     // a "grinder" sees the seed only once the window is closed: before the last entry it is a different value
     const w1 = (await ctx.client.getWindow(window.pubkey)).account;
     const seedIfStoppedNow = deriveVrfSeed(window.pubkey, w1.closeSlot, w1.entryCount, w1.entriesCommitment);
-    await enter(ctx, m, window, c, 3_000_000n);
+    await enter(ctx, m, window, c, 300_000_000n);
     const w2 = (await ctx.client.getWindow(window.pubkey)).account;
     const seedFinal = deriveVrfSeed(window.pubkey, w2.closeSlot, w2.entryCount, w2.entriesCommitment);
     assert.notDeepEqual(seedIfStoppedNow, seedFinal, "one more entry changes the seed");
@@ -45,7 +45,7 @@ describe("3. bias attempts", function () {
     // indices follow arrival order; nobody re-orders
     const entries = await ctx.client.getEntries(window.pubkey);
     assert.deepEqual(entries.map((e) => e.account.index), [0, 1, 2]);
-    assert.deepEqual(entries.map((e) => e.account.amount), [1_000_000n, 2_000_000n, 3_000_000n]);
+    assert.deepEqual(entries.map((e) => e.account.amount), [100_000_000n, 200_000_000n, 300_000_000n]);
 
     await sealAndRequest(ctx, m, window);
     const sealed = (await ctx.client.getWindow(window.pubkey)).account;
@@ -79,14 +79,14 @@ describe("3. bias attempts", function () {
     const window = await openWindow(ctx, m);
     const a = await participant(ctx, m, 10n ** 9n);
     const b = await participant(ctx, m, 10n ** 9n);
-    await enter(ctx, m, window, a, 1_000_000n);
-    await enter(ctx, m, window, b, 1_000_000n); // two entries: a draw is needed
+    await enter(ctx, m, window, a, 100_000_000n);
+    await enter(ctx, m, window, b, 100_000_000n); // two entries: a draw is needed
     const w = (await ctx.client.getWindow(window.pubkey)).account;
     await waitForSlot(ctx, w.closeSlot);
     await send(ctx, ctx.client.sealInstructions(m.market, window.pubkey));
     const treasury = await ctx.client.getOraoTreasury();
     const wrong = oraoRandomnessPda(new Uint8Array(32).fill(0x55))[0];
-    await expectError(send(ctx, [requestVrfIx({ payer: ctx.payer.publicKey, window: window.pubkey, networkState: oraoNetworkStatePda()[0], treasury, vrfRequest: wrong })]));
+    await expectError(send(ctx, [requestVrfIx({ payer: ctx.payer.publicKey, window: window.pubkey, networkState: oraoNetworkStatePda()[0], treasury, vrfRequest: wrong }, newVrfSalt())]));
     // the honest request then goes through
     const sealed = (await ctx.client.getWindow(window.pubkey)).account;
     await send(ctx, await ctx.client.requestVrfInstructions(ctx.payer.publicKey, window.pubkey, sealed.vrfSeed));
@@ -98,8 +98,8 @@ describe("3. bias attempts", function () {
     const window = await openWindow(ctx, m2);
     const a = await participant(ctx, m2, 10n ** 9n);
     const b = await participant(ctx, m2, 10n ** 9n);
-    await enter(ctx, m2, window, a, 1_000_000n);
-    await enter(ctx, m2, window, b, 1_000_000n);
+    await enter(ctx, m2, window, a, 100_000_000n);
+    await enter(ctx, m2, window, b, 100_000_000n);
     await sealAndRequest(ctx, m2, window);
     await waitFulfilled(ctx, window.pubkey);
     const w = (await ctx.client.getWindow(window.pubkey)).account;

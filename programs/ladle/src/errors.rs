@@ -16,11 +16,12 @@ pub enum LadleError {
     VrfTimeoutOutOfRange,
     /// max_entry_bps out of [500, 10000]
     MaxEntryBpsOutOfRange,
-    /// max_entry_amount must be > 0
-    MaxEntryAmountZero,
+    /// max_entry_amount must be >= MIN_ENTRY_AMOUNT
+    MaxEntryAmountTooSmall,
     /// name/symbol/uri too long
     MetadataTooLong,
-    /// quote mint has a freeze authority
+    /// quote mint has a freeze authority (unused since the final review:
+    /// QuoteMintNotWsol)
     QuoteMintHasFreezeAuthority,
     /// quote mint carries the TransferFeeConfig extension
     QuoteMintHasTransferFee,
@@ -28,7 +29,8 @@ pub enum LadleError {
     QuoteMintHasTransferHook,
     /// quote mint carries the PermanentDelegate extension
     QuoteMintHasPermanentDelegate,
-    /// quote mint is owned by neither SPL Token nor Token-2022
+    /// quote mint is not a classic SPL Token mint (unused since the final
+    /// review: QuoteMintNotWsol)
     QuoteMintUnknownProgram,
 
     // --- windows ---
@@ -121,12 +123,42 @@ pub enum LadleError {
     // --- cleanup (appended: existing codes unchanged) ---
     /// entry still has tokens to claim or a stake to refund
     EntryNotClosable,
-    /// every entry of the window must be closed first
+    /// every stake of the refunding window must be refunded first
     EntriesStillOpen,
-    /// the market's active window cannot be closed
+    /// the market's active window cannot be closed (unused since close_window
+    /// may close a finished active window)
     WindowIsActive,
 
     // --- crowd entering (appended: existing codes unchanged) ---
     /// this wallet already has an entry in this window
     AlreadyEntered,
+
+    // --- review fixes (appended: existing codes unchanged) ---
+    /// stake below MIN_ENTRY_AMOUNT
+    EntryTooSmall,
+
+    // --- second review (appended: existing codes unchanged) ---
+    /// MAX_WINDOWS_IN_FLIGHT windows wait to settle: no new window until the queue moves
+    TooManyWindowsPending,
+    /// request_vrf took more than MAX_VRF_REQUEST_COST_LAMPORTS from its payer
+    VrfRequestTooCostly,
+    /// wind-down build: no new market, window or entry
+    WindingDown,
+
+    // --- shutdown and third review (appended: existing codes unchanged) ---
+    /// the sale would pay less than the `min_quote_out` the seller signed
+    SlippageExceeded,
+    /// start_wind_down: this market's notice has already started
+    NoticeAlreadyStarted,
+    /// force_exit / close_market: the market's notice has not started or is not over
+    NoticeNotOver,
+    /// close_market: a round account is left, LADLE is still out, or the
+    /// market was made before rounds were counted
+    MarketNotDrained,
+
+    // --- final review (appended: existing codes unchanged) ---
+    /// the quote mint must be wrapped SOL: create_market refuses any other
+    /// (QuoteMintHasFreezeAuthority and QuoteMintUnknownProgram are no longer
+    /// raised), and force_exit / close_market only pay out in SOL
+    QuoteMintNotWsol,
 }

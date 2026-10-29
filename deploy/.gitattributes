@@ -1,0 +1,2 @@
+# Files that run on the Linux VPS: always LF, even in a Windows checkout
+* text eol=lf

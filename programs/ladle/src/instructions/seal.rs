@@ -19,9 +19,11 @@ use crate::state::{Market, Window, WindowState};
 ///     (`w = a * (a * (ROLL_MAX + r) - a * r) = ROLL_MAX * a^2 = S`), so its
 ///     share is the whole curve buy whatever its roll: there is nothing to
 ///     draw, and nothing to refund either (no randomness to wait for).
-///   - 2 or more -> `Sealed` and the ORAO seed is fixed as
+///   - 2 or more -> `Sealed` and the seal seed is fixed as
 ///     sha256("ladle:vrf:v1" || window || close_slot || entry_count ||
-///     entries_commitment) (randomness can now be requested).
+///     entries_commitment): it binds the final entry set; `request_vrf`
+///     salts it into the seed ORAO answers (randomness can now be
+///     requested).
 /// * Never: moves funds or touches the curve.
 #[derive(Accounts)]
 pub struct Seal<'info> {

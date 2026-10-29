@@ -1,4 +1,3 @@
-pub mod claim;
 pub mod close_entry;
 pub mod close_window;
 pub mod create_integration;
@@ -14,10 +13,10 @@ pub mod sell;
 pub mod sell_back;
 pub mod settle_page;
 pub mod tally_page;
+pub mod wind_down;
 
 // Glob re-exports: `#[program]` needs the `__client_accounts_*` modules
 // generated next to each Accounts struct to be visible at the crate root.
-pub use claim::*;
 pub use close_entry::*;
 pub use close_window::*;
 pub use create_integration::*;
@@ -33,6 +32,7 @@ pub use sell::*;
 pub use sell_back::*;
 pub use settle_page::*;
 pub use tally_page::*;
+pub use wind_down::*;
 
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{self, Allocate, Assign, CreateAccount, Transfer};
@@ -68,21 +68,23 @@ pub(crate) fn load_entry<'info>(
     Ok(entry)
 }
 
-/// Create the program-owned PDA `target` (`space` bytes, rent paid by
-/// `payer`), signed with `signer_seeds`. Same behaviour as Anchor's `init`:
-/// an address someone already sent lamports to is topped up, allocated and
-/// assigned instead of created, so pre-funding a future PDA cannot block it.
+/// Create the PDA `target` (`space` bytes, owned by `owner`, rent paid by
+/// `payer`), signed with `signer_seeds`; returns the lamports `payer` put in.
+/// Same behaviour as Anchor's `init`: an address someone already sent
+/// lamports to is topped up, allocated and assigned instead of created, so
+/// pre-funding a future PDA cannot block it.
 pub(crate) fn create_pda_account<'info>(
     payer: &AccountInfo<'info>,
     target: &AccountInfo<'info>,
     space: usize,
     signer_seeds: &[&[u8]],
-) -> Result<()> {
+    owner: &Pubkey,
+) -> Result<u64> {
     let rent = Rent::get()?.minimum_balance(space);
     let system = system_program::ID;
     let current = target.lamports();
     if current == 0 {
-        return system_program::create_account(
+        system_program::create_account(
             CpiContext::new_with_signer(
                 system,
                 CreateAccount { from: payer.clone(), to: target.clone() },
@@ -90,8 +92,9 @@ pub(crate) fn create_pda_account<'info>(
             ),
             rent,
             space as u64,
-            &crate::ID,
-        );
+            owner,
+        )?;
+        return Ok(rent);
     }
     let top_up = rent.max(1).saturating_sub(current);
     if top_up > 0 {
@@ -106,6 +109,7 @@ pub(crate) fn create_pda_account<'info>(
     )?;
     system_program::assign(
         CpiContext::new_with_signer(system, Assign { account_to_assign: target.clone() }, &[signer_seeds]),
-        &crate::ID,
-    )
+        owner,
+    )?;
+    Ok(top_up)
 }

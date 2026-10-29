@@ -1,0 +1,26 @@
+# A stand-in for the ORAO VRF program, loaded by tests/cu-bench at ORAO's
+# program id so that Ladle's `request_vrf` CPI runs for real on LiteSVM.
+# It implements only `request_v2(seed)` the way the bench needs it: the same
+# accounts, the zero-seed and seed-already-used refusals, the request PDA
+# check, the fee to the treasury and the pending account layout. Fulfilment
+# is written by the bench itself. Never deployed anywhere.
+#
+#   cargo build-sbf --tools-version v1.57 --arch v3   (pnpm bench:cu does it)
+[package]
+name = "mock-orao"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[workspace]
+
+[dependencies]
+solana-program = "=3.0.0"
+solana-system-interface = { version = "=2.0.0", features = ["bincode"] }
+
+# the entrypoint! macro tests cfgs this crate does not declare
+[lints.rust]
+unexpected_cfgs = "allow"

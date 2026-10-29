@@ -21,18 +21,28 @@ const built: Record<string, any> = {
   open_window: sdk.openWindowIx(anyKeys),
   enter: sdk.enterIx(anyKeys, 1n),
   seal: sdk.sealIx(anyKeys),
-  request_vrf: sdk.requestVrfIx(anyKeys),
+  request_vrf: sdk.requestVrfIx(anyKeys, new Uint8Array(32)),
   fulfill: sdk.fulfillIx(anyKeys),
   tally_page: sdk.tallyPageIx(anyKeys, 0, 1, [Keypair.generate().publicKey]),
   settle_page: sdk.settlePageIx(anyKeys, 0, 1, [Keypair.generate().publicKey]),
   refund_window: sdk.refundWindowIx(anyKeys),
   refund_entry: sdk.refundEntryIx(anyKeys),
-  claim: sdk.claimIx(anyKeys),
-  sell_back: sdk.sellBackIx(anyKeys, 1n),
-  sell: sdk.sellIx(anyKeys, 1n),
+  sell_back: sdk.sellBackIx(anyKeys, 1n, 0n),
+  sell: sdk.sellIx(anyKeys, 1n, 0n),
   close_entry: sdk.closeEntryIx(anyKeys),
   close_window: sdk.closeWindowIx(anyKeys),
+  start_wind_down: sdk.startWindDownIx(anyKeys),
+  force_exit: sdk.forceExitIx(anyKeys),
+  close_market: sdk.closeMarketIx(anyKeys),
 };
+// argument bytes of every builder == the IDL's argument types (u64 = 8, u32 = 4, u16 = 2, [u8; 32] = 32)
+const argBytes = (t: any): number => (t === "u64" || t === "i64" ? 8 : t === "u32" ? 4 : t === "u16" ? 2 : t === "u8" || t === "bool" ? 1 : t?.array ? argBytes(t.array[0]) * t.array[1] : -1);
+for (const ix of idl.instructions) {
+  const b = built[ix.name];
+  if (!b || ix.args.some((a: any) => argBytes(a.type) < 0)) continue; // create_market: strings
+  const want = 8 + ix.args.reduce((n: number, a: any) => n + argBytes(a.type), 0);
+  if (b.data.length !== want) { bad++; console.log(`argument bytes ${ix.name}: sdk ${b.data.length} idl ${want}`); }
+}
 const pages = new Set(["tally_page", "settle_page"]); // + 1 remaining Entry account in the built page [0, 1)
 for (const ix of idl.instructions) {
   const b = built[ix.name];

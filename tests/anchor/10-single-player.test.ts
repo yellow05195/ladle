@@ -16,7 +16,7 @@ describe("10. single player", function () {
   it("share == tokens_out exactly, tokens_out == curveBuy(to_curve), and no ORAO request", async () => {
     const a = await participant(ctx, m, 10n ** 9n);
     const curveBefore = (await ctx.client.getMarket(m.market)).account.curve;
-    const w = await runWindow(ctx, m, [{ p: a, amount: 2_500_000n }]);
+    const w = await runWindow(ctx, m, [{ p: a, amount: 250_000_000n }]);
     assert.equal(w.account.vrfRequested, false, "no randomness requested for a lone entry");
     assert.ok(w.account.seed.every((b) => b === 0), "seed stays zero");
     assert.ok(w.account.vrfSeed.every((b) => b === 0));
@@ -24,7 +24,7 @@ describe("10. single player", function () {
     assert.ok(e);
     assert.ok(e.account.roll >= 0n && e.account.roll <= ROLL_MAX);
     assert.equal(e.account.share, w.account.tokensOut, "the only entry gets everything");
-    const fees = splitFees(2_500_000n, 0n);
+    const fees = splitFees(250_000_000n, 0n);
     const { out, next } = curveBuy(curveBefore, fees.toCurve);
     assert.equal(w.account.tokensOut, out);
     assert.deepEqual((await ctx.client.getMarket(m.market)).account.curve, next);

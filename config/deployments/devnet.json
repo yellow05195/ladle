@@ -1,0 +1,23 @@
+{
+  "cluster": "devnet",
+  "rpc": "https://api.devnet.solana.com",
+  "programId": "85ig2nch9XBAeGbdhj613vipBufxsw1eWH4Eyw7QbgFj",
+  "market": "EuXBZTuWnBRwfy6BQDhuRE1Z6WYceB5B9ZChEDcPDMVS",
+  "tokenMint": "ACx49uHZzPQdhdgQ5WEe79h6ks8Pu3xPckxqn2vj1ayH",
+  "quoteMint": "So11111111111111111111111111111111111111112",
+  "quoteDecimals": 9,
+  "treasury": "A7iPUhYk87cek8n7FMYEG62LRQoyHEK8wFwjGFQdDSat",
+  "createdBy": "A7iPUhYk87cek8n7FMYEG62LRQoyHEK8wFwjGFQdDSat",
+  "createdAt": "2026-10-29T03:43:31.049Z",
+  "params": {
+    "windowSlots": "560",
+    "vrfTimeoutSlots": "900",
+    "maxEntryAmount": "5000000000",
+    "maxEntryBps": 2000,
+    "entryFloorAmount": "500000000",
+    "name": "Ladle",
+    "symbol": "LADLE",
+    "uri": "https://useladle.fun/token.json"
+  },
+  "signature": "5rhbFCxMqpm7beN4qnU88MqFkfsu5rQAjXyw6TpY7F3vaEHyMSRUQTofTbwdfCangraidDF8fTxkg5q1Y5sAXmDY"
+}

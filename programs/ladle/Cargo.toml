@@ -18,9 +18,20 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+# wind-down: the build that stops the game (consts.rs WIND_DOWN): refuses
+# create_market, open_window and enter, and adds start_wind_down,
+# force_exit and close_market (7-day notice, then every entry paid out);
+# never deployed for normal running.
+wind-down = []
+# rehearsal: devnet shutdown rehearsal only. The program id comes from
+# LADLE_REHEARSAL_PROGRAM_ID at build time and may not be the production id
+# (lib.rs), and the wind-down notice is 10 minutes instead of 7 days.
+rehearsal = []
 
 [dependencies]
-anchor-lang = "=1.2.0"
+# init-if-needed: open_window accepts a window escrow that someone created
+# before it (anyone can create an ATA for a future window PDA).
+anchor-lang = { version = "=1.2.0", features = ["init-if-needed"] }
 anchor-spl = "=1.2.0"
 # 256-bit arithmetic for the settlement law (law.rs).
 uint = { version = "0.10", default-features = false }

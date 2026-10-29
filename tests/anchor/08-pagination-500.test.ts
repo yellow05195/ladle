@@ -25,7 +25,7 @@ describe("8. pagination with 500 entries", function () {
     const people = await crowd(ctx, m, N, 10n ** 9n);
     for (let i = 0; i < N; i += PER_TX) {
       const group = people.slice(i, i + PER_TX);
-      await send(ctx, group.map((p, k) => enterInstruction(ctx, m, window, p.kp.publicKey, p.quote, 1_000n + BigInt(i + k))), group.map((p) => p.kp));
+      await send(ctx, group.map((p, k) => enterInstruction(ctx, m, window, p.kp.publicKey, p.quote, 100_000_000n + BigInt(i + k))), group.map((p) => p.kp));
     }
     const w0 = (await ctx.client.getWindow(window.pubkey)).account;
     assert.equal(w0.entryCount, N);

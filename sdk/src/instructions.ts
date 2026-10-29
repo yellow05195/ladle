@@ -1,5 +1,8 @@
 /**
- * Instruction builders for the 16 instructions of the Ladle program.
+ * Instruction builders for the 18 instructions of the Ladle program: the 15
+ * of the normal build and the 3 shutdown instructions of the wind-down build
+ * (`startWindDownIx`, `forceExitIx`, `closeMarketIx`). There is no
+ * `claim` since v25: LADLE never leaves the game to a wallet.
  *
  * Account order mirrors each `#[derive(Accounts)]` struct in
  * `programs/pulled/src/instructions/*.rs` exactly. Anchor `Option<...>`
@@ -32,8 +35,10 @@ export function instructionDiscriminator(name: string): Uint8Array {
 
 export const INSTRUCTION_NAMES = [
   "create_integration", "create_market", "open_window", "enter", "seal", "request_vrf", "fulfill",
-  "tally_page", "settle_page", "refund_window", "refund_entry", "claim", "sell_back", "sell",
+  "tally_page", "settle_page", "refund_window", "refund_entry", "sell_back", "sell",
   "close_entry", "close_window",
+  // wind-down build only
+  "start_wind_down", "force_exit", "close_market",
 ] as const;
 export type InstructionName = (typeof INSTRUCTION_NAMES)[number];
 
@@ -84,6 +89,7 @@ export interface CreateMarketAccounts {
   quoteVault: PublicKey;
   integration?: PublicKey | null;
   quoteTokenProgram: PublicKey;
+  /** The treasury the program was built with (`resolveTreasury`); the devnet key when omitted. */
   platformTreasury?: PublicKey;
 }
 export function createMarketIx(a: CreateMarketAccounts, params: CreateMarketParams, programId = PULLED_PROGRAM_ID): TransactionInstruction {
@@ -174,10 +180,12 @@ export interface RequestVrfAccounts {
   networkState?: PublicKey;
   /** `network_state.config.treasury`, read from chain. */
   treasury: PublicKey;
-  /** ORAO request PDA for `window.vrf_seed`. */
+  /** ORAO request PDA for the salted seed (`vrfRequestFor(window.vrf_seed, salt)`). */
   vrfRequest: PublicKey;
 }
-export function requestVrfIx(a: RequestVrfAccounts, programId = PULLED_PROGRAM_ID): TransactionInstruction {
+/** `request_vrf(salt)`: `salt` is 32 bytes, fresh per attempt (`newVrfSalt`). */
+export function requestVrfIx(a: RequestVrfAccounts, salt: Uint8Array, programId = PULLED_PROGRAM_ID): TransactionInstruction {
+  if (salt.length !== 32) throw new Error("salt must be 32 bytes");
   return ix(programId, "request_vrf", [
     w(a.payer, true),
     w(a.window),
@@ -186,7 +194,7 @@ export function requestVrfIx(a: RequestVrfAccounts, programId = PULLED_PROGRAM_I
     w(a.vrfRequest),
     r(ORAO_VRF_ID),
     r(SystemProgram.programId),
-  ]);
+  ], salt);
 }
 
 /* ------------------------------ 7 ------------------------------ */
@@ -277,6 +285,7 @@ export function refundWindowIx(a: RefundWindowAccounts, programId = PULLED_PROGR
 
 export interface RefundEntryAccounts {
   market: PublicKey;
+  /** Writable: counts the refund (`refunded_entries`). */
   window: PublicKey;
   entry: PublicKey;
   quoteMint: PublicKey;
@@ -288,7 +297,7 @@ export interface RefundEntryAccounts {
 export function refundEntryIx(a: RefundEntryAccounts, programId = PULLED_PROGRAM_ID): TransactionInstruction {
   return ix(programId, "refund_entry", [
     r(a.market),
-    r(a.window),
+    w(a.window),
     w(a.entry),
     r(a.quoteMint),
     w(a.escrow),
@@ -299,54 +308,35 @@ export function refundEntryIx(a: RefundEntryAccounts, programId = PULLED_PROGRAM
 
 /* ------------------------------ 12 ------------------------------ */
 
-export interface ClaimAccounts {
-  owner: PublicKey;
-  market: PublicKey;
-  window: PublicKey;
-  entry: PublicKey;
-  tokenMint: PublicKey;
-  tokenVault: PublicKey;
-  ownerTokenAccount: PublicKey;
-}
-export function claimIx(a: ClaimAccounts, programId = PULLED_PROGRAM_ID): TransactionInstruction {
-  return ix(programId, "claim", [
-    r(a.owner, true),
-    r(a.market),
-    r(a.window),
-    w(a.entry),
-    r(a.tokenMint),
-    w(a.tokenVault),
-    w(a.ownerTokenAccount),
-    r(TOKEN_PROGRAM_ID),
-  ]);
-}
-
-/* ------------------------------ 13 ------------------------------ */
-
+/** No Window account: the program reads the entry's market and window index from the Entry. */
 export interface SellBackAccounts {
   owner: PublicKey;
+  /** `entry.market`. */
   market: PublicKey;
-  window: PublicKey;
   entry: PublicKey;
   quoteMint: PublicKey;
   quoteVault: PublicKey;
   ownerQuote: PublicKey;
   quoteTokenProgram: PublicKey;
 }
-export function sellBackIx(a: SellBackAccounts, amount: bigint, programId = PULLED_PROGRAM_ID): TransactionInstruction {
+/**
+ * `sell_back(amount, min_quote_out)`: fails with SlippageExceeded when the
+ * sale would pay less than `minQuoteOut` (sales landing first move the
+ * price). `minQuoteOut = 0n` accepts any price.
+ */
+export function sellBackIx(a: SellBackAccounts, amount: bigint, minQuoteOut: bigint, programId = PULLED_PROGRAM_ID): TransactionInstruction {
   return ix(programId, "sell_back", [
     r(a.owner, true),
     w(a.market),
-    r(a.window),
     w(a.entry),
     r(a.quoteMint),
     w(a.quoteVault),
     w(a.ownerQuote),
     r(a.quoteTokenProgram),
-  ], u64Le(amount));
+  ], concatBytes(u64Le(amount), u64Le(minQuoteOut)));
 }
 
-/* ------------------------------ 14 ------------------------------ */
+/* ------------------------------ 13 ------------------------------ */
 
 export interface SellAccounts {
   seller: PublicKey;
@@ -359,7 +349,8 @@ export interface SellAccounts {
   sellerQuote: PublicKey;
   quoteTokenProgram: PublicKey;
 }
-export function sellIx(a: SellAccounts, amount: bigint, programId = PULLED_PROGRAM_ID): TransactionInstruction {
+/** `sell(amount, min_quote_out)` of LADLE held in a wallet (taken out by a pre-v25 claim). */
+export function sellIx(a: SellAccounts, amount: bigint, minQuoteOut: bigint, programId = PULLED_PROGRAM_ID): TransactionInstruction {
   return ix(programId, "sell", [
     r(a.seller, true),
     w(a.market),
@@ -371,23 +362,22 @@ export function sellIx(a: SellAccounts, amount: bigint, programId = PULLED_PROGR
     w(a.sellerQuote),
     r(TOKEN_PROGRAM_ID),
     r(a.quoteTokenProgram),
-  ], u64Le(amount));
+  ], concatBytes(u64Le(amount), u64Le(minQuoteOut)));
 }
 
-/* ------------------------------ 15 ------------------------------ */
+/* ------------------------------ 14 ------------------------------ */
 
 export interface CloseEntryAccounts {
-  window: PublicKey;
   entry: PublicKey;
   /** entry.owner: receives the rent. */
   owner: PublicKey;
 }
-/** Return a finished entry's rent to its owner (permissionless). */
+/** Return a finished entry's rent to its owner (permissionless; no Window account, it may be closed). */
 export function closeEntryIx(a: CloseEntryAccounts, programId = PULLED_PROGRAM_ID): TransactionInstruction {
-  return ix(programId, "close_entry", [w(a.window), w(a.entry), w(a.owner)]);
+  return ix(programId, "close_entry", [w(a.entry), w(a.owner)]);
 }
 
-/* ------------------------------ 16 ------------------------------ */
+/* ------------------------------ 15 ------------------------------ */
 
 export interface CloseWindowAccounts {
   market: PublicKey;
@@ -399,15 +389,93 @@ export interface CloseWindowAccounts {
   quoteVault: PublicKey;
   quoteTokenProgram: PublicKey;
 }
-/** Return a finished window's rent (window + escrow) to its opener (permissionless). */
+/**
+ * Return a finished window's rent (window + escrow) to its opener
+ * (permissionless): a Settled window at once, a Refunding window once every
+ * stake is refunded. The market is writable: closing its active window
+ * clears `has_active_window`.
+ */
 export function closeWindowIx(a: CloseWindowAccounts, programId = PULLED_PROGRAM_ID): TransactionInstruction {
   return ix(programId, "close_window", [
-    r(a.market),
+    w(a.market),
     w(a.window),
     w(a.opener),
     r(a.quoteMint),
     w(a.escrow),
     w(a.quoteVault),
+    r(a.quoteTokenProgram),
+  ]);
+}
+
+/* --------------------- 17-19: shutdown (wind-down build) --------------------- */
+
+/** Start a market's 7-day closing notice (anyone; wind-down build only; once). */
+export function startWindDownIx(a: { market: PublicKey }, programId = PULLED_PROGRAM_ID): TransactionInstruction {
+  return ix(programId, "start_wind_down", [w(a.market)]);
+}
+
+export interface ForceExitAccounts {
+  /** Anyone: puts up the unwrap account's rent for the instruction and gets it back. */
+  payer: PublicKey;
+  market: PublicKey;
+  entry: PublicKey;
+  /** entry.owner: receives the payout (as SOL) and the entry's rent. */
+  owner: PublicKey;
+  /** The entry's window and its escrow, only for a stake still to refund (window Refunding). */
+  window?: PublicKey | null;
+  escrow?: PublicKey | null;
+  quoteMint: PublicKey;
+  quoteVault: PublicKey;
+  /** `unwrapPda(entry)`: the wSOL account the payout passes through on its way to the owner as SOL. */
+  payout: PublicKey;
+  quoteTokenProgram: PublicKey;
+}
+/**
+ * After a market's notice: pay what is left in an entry to its owner as SOL
+ * (its unsold share sold to the curve, or its unrefunded stake) and close it
+ * (anyone; wind-down build only; wSOL markets, i.e. every market this build
+ * can create: another quote mint fails with QuoteMintNotWsol).
+ */
+export function forceExitIx(a: ForceExitAccounts, programId = PULLED_PROGRAM_ID): TransactionInstruction {
+  return ix(programId, "force_exit", [
+    w(a.payer, true),
+    w(a.market),
+    w(a.entry),
+    w(a.owner),
+    opt(a.window, true, programId),
+    opt(a.escrow, true, programId),
+    r(a.quoteMint),
+    w(a.quoteVault),
+    w(a.payout),
+    r(a.quoteTokenProgram),
+    r(SystemProgram.programId),
+  ]);
+}
+
+export interface CloseMarketAccounts {
+  market: PublicKey;
+  /** market.creator: receives the rents and the quote left, as SOL. */
+  creator: PublicKey;
+  tokenMint: PublicKey;
+  tokenVault: PublicKey;
+  quoteMint: PublicKey;
+  quoteVault: PublicKey;
+  quoteTokenProgram: PublicKey;
+}
+/**
+ * After the notice, with no round left and no LADLE out: burn the unsold
+ * LADLE, close the vaults and the market, everything to the creator
+ * (anyone; wind-down build only).
+ */
+export function closeMarketIx(a: CloseMarketAccounts, programId = PULLED_PROGRAM_ID): TransactionInstruction {
+  return ix(programId, "close_market", [
+    w(a.market),
+    w(a.creator),
+    w(a.tokenMint),
+    w(a.tokenVault),
+    r(a.quoteMint),
+    w(a.quoteVault),
+    r(TOKEN_PROGRAM_ID),
     r(a.quoteTokenProgram),
   ]);
 }

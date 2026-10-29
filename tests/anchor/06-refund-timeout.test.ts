@@ -25,8 +25,8 @@ describe("6. refund on silent VRF", function () {
     const window = await openWindow(ctx, m);
     const a = await participant(ctx, m, 10n ** 9n);
     const b = await participant(ctx, m, 10n ** 9n);
-    await enter(ctx, m, window, a, 4_000_000n);
-    await enter(ctx, m, window, b, 6_000_000n);
+    await enter(ctx, m, window, a, 400_000_000n);
+    await enter(ctx, m, window, b, 600_000_000n);
     const w0 = (await ctx.client.getWindow(window.pubkey)).account;
     await waitForSlot(ctx, w0.closeSlot);
     await send(ctx, ctx.client.sealInstructions(m.market, window.pubkey)); // seal only: nobody requests randomness
@@ -52,11 +52,13 @@ describe("6. refund on silent VRF", function () {
       // third party pays the fee, the owner never signs
       await send(ctx, ctx.client.refundEntryInstructions(stranger.publicKey, m.market, mk, window.pubkey, refunding.account, e), [], stranger);
     }
-    assert.equal((await tokenBalance(ctx, a.quote, m.quoteProgram)) - beforeA, 4_000_000n, "full stake back, no fee");
-    assert.equal((await tokenBalance(ctx, b.quote, m.quoteProgram)) - beforeB, 6_000_000n);
+    assert.equal((await tokenBalance(ctx, a.quote, m.quoteProgram)) - beforeA, 400_000_000n, "full stake back, no fee");
+    assert.equal((await tokenBalance(ctx, b.quote, m.quoteProgram)) - beforeB, 600_000_000n);
     assert.equal(await tokenBalance(ctx, refunding.account.escrow, m.quoteProgram), 0n);
     const entries = await ctx.client.getEntries(window.pubkey);
     assert.ok(entries.every((e) => e.account.refunded));
+    // every refund is counted on the window: close_window of a Refunding window waits for all of them
+    assert.equal((await ctx.client.getWindow(window.pubkey)).account.refundedEntries, 2);
     await expectError(send(ctx, ctx.client.refundEntryInstructions(stranger.publicKey, m.market, mk, window.pubkey, refunding.account, entries[0]!), [], stranger), "AlreadyRefunded");
   });
 });

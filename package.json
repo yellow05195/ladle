@@ -11,7 +11,8 @@
     "test:props": "node --experimental-strip-types tests/props/run.ts",
     "test:words": "node --experimental-strip-types tests/forbidden-words.ts",
     "test:idl": "node --experimental-strip-types tests/idl-authority.ts",
-    "test:all": "pnpm test:words && pnpm test:props && pnpm test:idl && pnpm test:idl-sdk && pnpm test:sdk && pnpm test:indexer && pnpm test:chat",
+    "test:gate": "node --experimental-strip-types tests/launch-gate.ts",
+    "test:all": "pnpm test:words && pnpm test:gate && pnpm test:props && pnpm test:idl && pnpm test:idl-sdk && pnpm test:sdk && pnpm test:indexer && pnpm test:chat && pnpm test:keeper",
     "test:idl-sdk": "node --experimental-strip-types tests/idl-sdk-consistency.ts",
     "idl:assemble": "node scripts/assemble-idl.mjs",
     "test:sdk": "node --test \"sdk/test/**/*.test.ts\"",
@@ -21,7 +22,10 @@
     "keeper": "node --experimental-strip-types keeper/src/index.ts",
     "chat": "node --experimental-strip-types chat/src/index.ts",
     "test:chat": "node --test \"chat/test/**/*.test.ts\"",
-    "bench:cu": "cargo run --release --manifest-path tests/cu-bench/Cargo.toml -- target/deploy/ladle.so owner 1,2,50,100,500,2048 20,28"
+    "test:keeper": "node --test \"keeper/test/**/*.test.ts\"",
+    "bench:cu": "cargo build-sbf --manifest-path tests/cu-bench/mock-orao/Cargo.toml --tools-version v1.57 --arch v3 && cargo run --release --manifest-path tests/cu-bench/Cargo.toml -- target/deploy/ladle.so owner 1,2,50,100,500,2048 20,28 && pnpm bench:wind-down",
+    "build:wind-down": "cargo build-sbf --manifest-path programs/ladle/Cargo.toml --tools-version v1.57 --arch v3 --features wind-down --sbf-out-dir target/wind-down && node -e \"require('fs').rmSync('target/wind-down/ladle-keypair.json',{force:true})\"",
+    "bench:wind-down": "pnpm build:wind-down && cargo run --release --manifest-path tests/cu-bench/Cargo.toml -- target/deploy/ladle.so wind-down target/wind-down/ladle.so"
   },
   "devDependencies": {
     "typescript": "^5.9.0",

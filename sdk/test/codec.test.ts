@@ -9,15 +9,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import {
-  ACCOUNT_SIZES, DISCRIMINATORS, accountDiscriminator, decodeEntry, decodeMarket, decodeWindow, decodeIntegration,
+  ACCOUNT_SIZES, DISCRIMINATORS, OFFSETS, accountDiscriminator, decodeEntry, decodeMarket, decodeWindow, decodeIntegration,
   parseOraoRandomness,
 } from "../src/accounts.ts";
-import { instructionDiscriminator, identifyInstruction, enterIx, tallyPageIx, settlePageIx, fulfillIx, openWindowIx, createMarketIx, encodeCreateMarketParams } from "../src/instructions.ts";
+import { instructionDiscriminator, identifyInstruction, enterIx, tallyPageIx, settlePageIx, fulfillIx, openWindowIx, createMarketIx, encodeCreateMarketParams, requestVrfIx } from "../src/instructions.ts";
 import { ONE_TX_SETTLE_MAX, SETTLE_PAGE_LEGACY, TALLY_PAGE_LEGACY, computeUnitLimitIx, settlePageComputeUnits, tallyPageComputeUnits, MEASURED_CU } from "../src/budget.ts";
 import { PULLED_ERRORS, PULLED_ERROR_MESSAGES, describeError, errorCode } from "../src/errors.ts";
 import { Transaction, type TransactionInstruction } from "@solana/web3.js";
 import { decodeEvent, eventDiscriminator, parseEventsFromLogs } from "../src/events.ts";
-import { PULLED_PROGRAM_ID, ORAO_VRF_ID, deriveVrfSeed, entriesCommitment, foldEntryCommitment, oraoNetworkStatePda, oraoRandomnessPda, u32Le, u64Le, concatBytes, entryPda, windowPda, marketPda, tokenMetadataPda, MPL_TOKEN_METADATA_ID } from "../src/pda.ts";
+import { PULLED_PROGRAM_ID, ORAO_VRF_ID, deriveVrfSeed, deriveRequestSeed, newVrfSalt, vrfRequestFor, entriesCommitment, foldEntryCommitment, oraoNetworkStatePda, oraoRandomnessPda, u32Le, u64Le, concatBytes, entryPda, windowPda, marketPda, tokenMetadataPda, MPL_TOKEN_METADATA_ID } from "../src/pda.ts";
 import { WindowState } from "../src/types.ts";
 import { verifyWindow } from "../src/verify.ts";
 import { computeShares, computeWeights, deriveRoll } from "../src/law.ts";
@@ -37,20 +37,26 @@ test("discriminators follow the Anchor convention (checked against vrf.rs consta
 
 test("account sizes equal 8 + INIT_SPACE", () => {
   assert.equal(ACCOUNT_SIZES.Integration, 43);
-  assert.equal(ACCOUNT_SIZES.Market, 562);
-  assert.equal(ACCOUNT_SIZES.Window, 411);
-  assert.equal(ACCOUNT_SIZES.Entry, 110);
+  assert.equal(ACCOUNT_SIZES.Market, 626);
+  assert.equal(ACCOUNT_SIZES.Window, 507);
+  assert.equal(ACCOUNT_SIZES.Entry, 151);
 });
 
-function encodeEntry(e: { window: PublicKey; owner: PublicKey; index: number; amount: bigint; roll: bigint; share: bigint; claimed: bigint; refunded: boolean; bump: number }): Uint8Array {
-  return concatBytes(DISCRIMINATORS.Entry, e.window.toBytes(), e.owner.toBytes(), u32Le(e.index), u64Le(e.amount), u64Le(e.roll), u64Le(e.share), u64Le(e.claimed), new Uint8Array([e.refunded ? 1 : 0, e.bump]));
+function encodeEntry(e: {
+  window: PublicKey; owner: PublicKey; index: number; amount: bigint; roll: bigint; share: bigint; claimed: bigint; refunded: boolean; bump: number;
+  market?: PublicKey; windowIndex?: bigint; settled?: boolean;
+}): Uint8Array {
+  return concatBytes(
+    DISCRIMINATORS.Entry, e.window.toBytes(), e.owner.toBytes(), u32Le(e.index), u64Le(e.amount), u64Le(e.roll), u64Le(e.share), u64Le(e.claimed), new Uint8Array([e.refunded ? 1 : 0, e.bump]),
+    (e.market ?? PublicKey.default).toBytes(), u64Le(e.windowIndex ?? 0n), new Uint8Array([e.settled ? 1 : 0]),
+  );
 }
 
 function encodeWindow(w: {
   market: PublicKey; index: bigint; state: number; openSlot: bigint; closeSlot: bigint; sealedSlot: bigint; totalAmount: bigint; entryCount: number;
   entriesCommitment: Uint8Array; vrfSeed: Uint8Array; vrfRequested: boolean; vrfRequestedSlot: bigint; vrfRequest: PublicKey; seed: Uint8Array;
   rollSum: bigint; tallyCursor: number; settleCursor: number; cumWeight: Uint8Array; tokensOut: bigint; feePlatform: bigint; feeHost: bigint; toCurve: bigint; escrow: PublicKey; bump: number;
-  opener?: PublicKey; closedEntries?: number;
+  opener?: PublicKey; refundedEntries?: number; vrfPayer?: PublicKey;
 }): Uint8Array {
   const u128 = (v: bigint) => { const out = new Uint8Array(16); for (let i = 0; i < 16; i++) { out[i] = Number(v & 0xffn); v >>= 8n; } return out; };
   return concatBytes(
@@ -58,30 +64,35 @@ function encodeWindow(w: {
     u64Le(w.totalAmount), u32Le(w.entryCount), w.entriesCommitment, w.vrfSeed, new Uint8Array([w.vrfRequested ? 1 : 0]), u64Le(w.vrfRequestedSlot),
     w.vrfRequest.toBytes(), w.seed, u128(w.rollSum), u32Le(w.tallyCursor), u32Le(w.settleCursor), w.cumWeight, u64Le(w.tokensOut), u64Le(w.feePlatform),
     u64Le(w.feeHost), u64Le(w.toCurve), w.escrow.toBytes(), new Uint8Array([w.bump]),
-    (w.opener ?? PublicKey.default).toBytes(), u32Le(w.closedEntries ?? 0),
+    (w.opener ?? PublicKey.default).toBytes(), u32Le(w.refundedEntries ?? 0), (w.vrfPayer ?? PublicKey.default).toBytes(),
+    new Uint8Array(64), // reserved (third review)
   );
 }
 
 test("Entry / Window / Market / Integration decode their borsh layout", () => {
   const window = Keypair.generate().publicKey, owner = Keypair.generate().publicKey;
-  const eBytes = encodeEntry({ window, owner, index: 7, amount: 123_456_789n, roll: 9_999n, share: 42n, claimed: 1n, refunded: false, bump: 254 });
+  const market = Keypair.generate().publicKey, escrow = Keypair.generate().publicKey, req = Keypair.generate().publicKey;
+  const eBytes = encodeEntry({ window, owner, index: 7, amount: 123_456_789n, roll: 9_999n, share: 42n, claimed: 1n, refunded: false, bump: 254, market, windowIndex: (1n << 40n) + 3n, settled: true });
   assert.equal(eBytes.length, ACCOUNT_SIZES.Entry);
   const e = decodeEntry(eBytes);
   assert.ok(e.window.equals(window) && e.owner.equals(owner));
   assert.equal(e.index, 7); assert.equal(e.amount, 123_456_789n); assert.equal(e.roll, 9_999n); assert.equal(e.share, 42n); assert.equal(e.claimed, 1n);
   assert.equal(e.refunded, false); assert.equal(e.bump, 254);
+  assert.ok(e.market.equals(market)); assert.equal(e.windowIndex, (1n << 40n) + 3n); assert.equal(e.settled, true);
+  // memcmp offset of Entry.market (getEntriesByOwner(owner, undefined, market))
+  assert.deepEqual([...eBytes.subarray(OFFSETS.entryMarket, OFFSETS.entryMarket + 32)], [...market.toBytes()]);
 
-  const market = Keypair.generate().publicKey, escrow = Keypair.generate().publicKey, req = Keypair.generate().publicKey;
   const seed = new Uint8Array(64).map((_, i) => i + 1);
   const wBytes = encodeWindow({
     market, index: 3n, state: WindowState.Drawn, openSlot: 100n, closeSlot: 192n, sealedSlot: 193n, totalAmount: 5_000n, entryCount: 2,
     entriesCommitment: new Uint8Array(32).fill(9), vrfSeed: new Uint8Array(32).fill(8), vrfRequested: true, vrfRequestedSlot: 194n, vrfRequest: req, seed,
-    rollSum: (1n << 100n) + 5n, tallyCursor: 1, settleCursor: 0, cumWeight: new Uint8Array(32), tokensOut: 0n, feePlatform: 0n, feeHost: 0n, toCurve: 0n, escrow, bump: 251, opener: owner, closedEntries: 1,
+    rollSum: (1n << 100n) + 5n, tallyCursor: 1, settleCursor: 0, cumWeight: new Uint8Array(32), tokensOut: 0n, feePlatform: 0n, feeHost: 0n, toCurve: 0n, escrow, bump: 251, opener: owner, refundedEntries: 1,
+    vrfPayer: escrow,
   });
   assert.equal(wBytes.length, ACCOUNT_SIZES.Window);
   const w = decodeWindow(wBytes);
   assert.ok(w.market.equals(market) && w.escrow.equals(escrow) && w.vrfRequest.equals(req));
-  assert.ok(w.opener.equals(owner)); assert.equal(w.closedEntries, 1);
+  assert.ok(w.opener.equals(owner)); assert.equal(w.refundedEntries, 1); assert.equal(w.closedEntries, 1); assert.ok(w.vrfPayer.equals(escrow));
   assert.equal(w.index, 3n); assert.equal(w.state, WindowState.Drawn); assert.equal(w.closeSlot, 192n); assert.equal(w.entryCount, 2);
   assert.equal(w.vrfRequested, true); assert.equal(w.rollSum, (1n << 100n) + 5n); assert.equal(w.tallyCursor, 1); assert.deepEqual([...w.seed], [...seed]); assert.equal(w.bump, 251);
 
@@ -95,7 +106,15 @@ test("Entry / Window / Market / Integration decode their borsh layout", () => {
     u64Le(5n), u64Le(4n), new Uint8Array([1]), u64Le(4n), quoteVault.toBytes(), tokenVault.toBytes(), new Uint8Array([250]), str("Pulled Test"), str("PULL"), str("https://x"),
   );
   const padded = new Uint8Array(ACCOUNT_SIZES.Market); padded.set(mBytes);
+  // a market of the build before `reserved` (562 bytes) decodes the same, without a notice and uncounted
+  const old = new Uint8Array(562); old.set(mBytes);
+  const oldM = decodeMarket(old);
+  assert.equal(oldM.uri, "https://x");
+  assert.equal(oldM.noticeStart, 0n); assert.equal(oldM.liveWindows, 0n); assert.equal(oldM.countsWindows, false);
+  // v25 fields after the strings: notice_start (i64), live_windows, counts_windows
+  padded.set(concatBytes(u64Le(1_800_000_000n), u64Le(3n), new Uint8Array([1])), mBytes.length);
   const m = decodeMarket(padded);
+  assert.equal(m.noticeStart, 1_800_000_000n); assert.equal(m.liveWindows, 3n); assert.equal(m.countsWindows, true);
   assert.ok(m.creator.equals(creator) && m.tokenMint.equals(tokenMint) && m.integration.equals(PublicKey.default));
   assert.equal(m.curve.x, 30_000_000_000n); assert.equal(m.curve.y, 1_000_000_000_000_000n);
   assert.equal(m.windowSlots, 92n); assert.equal(m.vrfTimeoutSlots, 900n); assert.equal(m.maxEntryBps, 10_000); assert.equal(m.windowCount, 5n); assert.equal(m.nextSettleIndex, 4n);
@@ -149,6 +168,19 @@ test("VRF seed derivation matches state.rs (domain || window || close_slot LE ||
   // ORAO PDAs are off the ORAO program
   assert.ok(PublicKey.isOnCurve(ORAO_VRF_ID.toBytes()) || true);
   assert.notEqual(oraoNetworkStatePda()[0].toBase58(), oraoRandomnessPda(s)[0].toBase58());
+  // request_vrf(salt) asks ORAO for sha256("ladle:vrf:req" || seal seed || salt) (state.rs derive_request_seed)
+  const salt = new Uint8Array(32).fill(0xb2);
+  const q = deriveRequestSeed(s, salt);
+  assert.deepEqual(q, sha256(concatBytes(new TextEncoder().encode("ladle:vrf:req"), s, salt)));
+  assert.notDeepEqual(q, s);
+  assert.notDeepEqual(q, deriveRequestSeed(s, new Uint8Array(32).fill(0xb3)));
+  assert.ok(vrfRequestFor(s, salt).equals(oraoRandomnessPda(q)[0]));
+  assert.equal(newVrfSalt().length, 32);
+  assert.notDeepEqual(newVrfSalt(), newVrfSalt());
+  // the instruction carries the salt after its discriminator
+  const ix = requestVrfIx({ payer: owner, window, treasury: owner, vrfRequest: vrfRequestFor(s, salt) }, salt);
+  assert.deepEqual([...ix.data.subarray(8)], [...salt]);
+  assert.throws(() => requestVrfIx({ payer: owner, window, treasury: owner, vrfRequest: owner }, new Uint8Array(31)));
 });
 
 test("ORAO randomness parser: pending, fulfilled, wrong seed", () => {
@@ -293,9 +325,19 @@ test("requested compute units cover the measured worst cases with a margin", () 
   assert.ok(settlePageComputeUnits(SETTLE_PAGE_LEGACY) <= 400_000);
 });
 
-test("error list: AlreadyEntered appended, every error has a sentence", () => {
-  assert.equal(PULLED_ERRORS[PULLED_ERRORS.length - 1], "AlreadyEntered");
+test("error list: AlreadyEntered, EntryTooSmall, the second review's three, the shutdown's four, then QuoteMintNotWsol appended, every error has a sentence", () => {
+  assert.equal(PULLED_ERRORS[PULLED_ERRORS.length - 1], "QuoteMintNotWsol");
+  assert.equal(errorCode("QuoteMintNotWsol"), 6062);
+  assert.equal(errorCode("SlippageExceeded"), 6058);
+  assert.equal(errorCode("NoticeAlreadyStarted"), 6059);
+  assert.equal(errorCode("NoticeNotOver"), 6060);
+  assert.equal(errorCode("MarketNotDrained"), 6061);
+  assert.equal(errorCode("TooManyWindowsPending"), 6055);
+  assert.equal(errorCode("VrfRequestTooCostly"), 6056);
+  assert.equal(errorCode("WindingDown"), 6057);
+  assert.equal(errorCode("EntryTooSmall"), 6054);
   assert.equal(errorCode("AlreadyEntered"), 6053);
+  assert.equal(errorCode("MaxEntryAmountTooSmall"), 6004); // renamed in place, same code
   assert.equal(errorCode("WindowIsActive"), 6052); // existing codes unchanged
   for (const n of PULLED_ERRORS) assert.ok(PULLED_ERROR_MESSAGES[n].length > 0, n);
   assert.equal(describeError(new Error("... custom program error: 0x17a5")), PULLED_ERROR_MESSAGES.AlreadyEntered);

@@ -10,19 +10,30 @@ use crate::state::{Market, Window, WindowState};
 ///
 /// * Who: anyone. The rent of the Window and of its escrow always goes back
 ///   to `window.opener` (whoever paid for `open_window`), never to the caller.
-/// * State: window `Settled` or `Refunding`, every entry closed
-///   (`closed_entries == entry_count`, immediately true for an empty window),
-///   and the window is not the market's active window (`open_window` reads
-///   the active window as `prev_window`).
-/// * Effect: any quote left in the escrow (only possible if someone sent
+/// * State: window `Settled` (its entries may still be open: `force_exit`,
+///   `sell_back` and `close_entry` read only the Entry and the Market), or
+///   `Refunding` with every stake refunded (`refunded_entries ==
+///   entry_count`: `refund_entry` pays from the escrow, signed by the
+///   window). The market's active window too, in those states: the market
+///   then has no active window (`has_active_window = false`), and the next
+///   `open_window` needs no `prev_window` (it only reads one to check that
+///   the active window is past `Open`, which a finished one is). Before
+///   the second review the active window could never be closed, so the last
+///   round of a market kept its rent (Window + escrow, ~0.006 SOL) for good.
+/// * Effect: `market.live_windows -= 1` (counted markets; `close_market`
+///   waits for 0). Any quote left in the escrow (only possible if someone sent
 ///   tokens to it directly: the stakes left at finalize or by refund) is
 ///   swept into the market's quote vault, then the escrow and the Window are
 ///   closed.
-/// * Never: closes a window with an entry still open, or pays anyone but the
-///   opener.
+/// * Never: closes a Refunding window with a stake still in the escrow, or
+///   pays anyone but the opener. A closed window's PDA is never created
+///   again (`open_window` only creates index `window_count`, which only
+///   grows), so no entry can be added to it.
 #[derive(Accounts)]
 pub struct CloseWindow<'info> {
+    /// Writable: closing the active window clears `has_active_window`.
     #[account(
+        mut,
         seeds = [MARKET_SEED, market.token_mint.as_ref()],
         bump = market.bump,
     )]
@@ -57,18 +68,25 @@ pub struct CloseWindow<'info> {
 }
 
 pub fn handle_close_window(ctx: Context<CloseWindow>) -> Result<()> {
-    let market = &ctx.accounts.market;
     let window = &ctx.accounts.window;
 
-    require!(
-        matches!(window.state, WindowState::Settled | WindowState::Refunding),
-        LadleError::WrongWindowState
-    );
-    require!(window.closed_entries == window.entry_count, LadleError::EntriesStillOpen);
-    require!(
-        !(market.has_active_window && market.active_window == window.index),
-        LadleError::WindowIsActive
-    );
+    match window.state {
+        WindowState::Settled => {}
+        WindowState::Refunding => require!(
+            window.refunded_entries == window.entry_count,
+            LadleError::EntriesStillOpen
+        ),
+        _ => return err!(LadleError::WrongWindowState),
+    }
+    // A finished active window: the market no longer has one (see above).
+    let market = &mut ctx.accounts.market;
+    if market.has_active_window && market.active_window == window.index {
+        market.has_active_window = false;
+    }
+    // every window of a counted market was counted by its open_window
+    if market.counts_windows {
+        market.live_windows = market.live_windows.checked_sub(1).ok_or(LadleError::Overflow)?;
+    }
 
     let market_key = market.key();
     let index_bytes = window.index.to_le_bytes();

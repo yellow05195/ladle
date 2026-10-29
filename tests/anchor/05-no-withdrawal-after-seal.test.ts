@@ -22,8 +22,8 @@ describe("5. no withdrawal after seal", function () {
     const window = await openWindow(ctx, m);
     const a = await participant(ctx, m, 10n ** 9n);
     const b = await participant(ctx, m, 10n ** 9n);
-    await enter(ctx, m, window, a, 5_000_000n);
-    await enter(ctx, m, window, b, 5_000_000n);
+    await enter(ctx, m, window, a, 500_000_000n);
+    await enter(ctx, m, window, b, 500_000_000n);
     const mk = (await ctx.client.getMarket(m.market)).account;
     const entry = (await ctx.client.getEntries(window.pubkey))[0]!;
     const refundEntry = async () => {
@@ -42,8 +42,8 @@ describe("5. no withdrawal after seal", function () {
     // entering a closed window
     const w = await ctx.client.getWindow(window.pubkey);
     const late = await participant(ctx, m, 10n ** 9n);
-    await expectError(send(ctx, [enterInstruction(ctx, m, w, late.kp.publicKey, late.quote, 1_000n)], [late.kp], late.kp), "WrongWindowState");
-    assert.equal(await tokenBalance(ctx, w.account.escrow, m.quoteProgram), 10_000_000n, "stakes still in escrow");
+    await expectError(send(ctx, [enterInstruction(ctx, m, w, late.kp.publicKey, late.quote, 100_000n)], [late.kp], late.kp), "WrongWindowState");
+    assert.equal(await tokenBalance(ctx, w.account.escrow, m.quoteProgram), 1_000_000_000n, "stakes still in escrow");
 
     await waitFulfilled(ctx, window.pubkey);
     await fulfill(ctx, window.pubkey);

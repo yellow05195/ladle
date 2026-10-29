@@ -4,9 +4,16 @@
   "type": "module",
   "private": true,
   "description": "Permissionless, bountied keeper for PULLED markets: opens, seals, requests VRF, fulfills, tallies, settles and refunds windows.",
-  "bin": { "pulled-keeper": "./src/index.ts" },
+  "bin": {
+    "pulled-keeper": "./src/index.ts",
+    "ladle-create-market": "./src/ops/create-market.ts",
+    "ladle-report": "./src/ops/report.ts"
+  },
   "scripts": {
     "start": "node --experimental-strip-types src/index.ts",
+    "create-market": "node --experimental-strip-types src/ops/create-market.ts",
+    "report": "node --experimental-strip-types src/ops/report.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
@@ -17,5 +24,8 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=22.6"
   }
 }

@@ -7,14 +7,18 @@ use crate::errors::LadleError;
 use crate::events::Sold;
 use crate::state::Market;
 
-/// `sell(amount)`
+/// `sell(amount, min_quote_out)`
 ///
 /// * Who: anyone holding the token in a wallet (signer = transfer authority
 ///   of `seller_token_account`).
 /// * State: none (the market exists).
 /// * Effect: moves `amount` tokens into the market's token vault, then pays
 ///   `curve.sell(amount)` quote from the quote vault to `seller_quote`.
-///   Zero fee.
+///   Zero fee. Fails with `SlippageExceeded` when that is less than
+///   `min_quote_out`. Since v25 no instruction moves LADLE out of the vault
+///   to a wallet (`claim` is gone), so this only serves LADLE taken out by
+///   an earlier build (devnet); it stays in the wind-down build so such
+///   holders can sell during the shutdown notice.
 /// * Never: blocked by any authority or flag.
 #[derive(Accounts)]
 pub struct Sell<'info> {
@@ -50,13 +54,15 @@ pub struct Sell<'info> {
     pub quote_token_program: Interface<'info, TokenInterface>,
 }
 
-pub fn handle_sell(ctx: Context<Sell>, amount: u64) -> Result<()> {
+pub fn handle_sell(ctx: Context<Sell>, amount: u64, min_quote_out: u64) -> Result<()> {
     require!(amount > 0, LadleError::ZeroAmount);
     let market = &mut ctx.accounts.market;
 
     let (quote_out, new_curve) = market.curve.sell(amount)?;
-    // Every token in a wallet was sold by the curve (supply only leaves the
-    // vault through `claim`), so the vault covers this. Defensive check.
+    require!(quote_out >= min_quote_out, LadleError::SlippageExceeded);
+    // Every token in a wallet was sold by the curve (supply only left the
+    // vault through the `claim` of builds before v25), so the vault covers
+    // this. Defensive check.
     require!(
         quote_out <= ctx.accounts.quote_vault.amount,
         LadleError::InsufficientQuoteLiquidity

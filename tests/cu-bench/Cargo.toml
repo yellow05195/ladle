@@ -22,6 +22,8 @@ solana-signer = "3.0.1"
 solana-transaction = "4.1.5"
 solana-message = "4.2.4"
 solana-sha256-hasher = { version = "3.1", features = ["sha2"] }
+# the Clock sysvar (the shutdown notice runs on the cluster clock)
+solana-clock = "~3.2.0"
 
 [profile.release]
 opt-level = 3

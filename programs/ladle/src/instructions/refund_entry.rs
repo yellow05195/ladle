@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, TransferChecked};
 
 use crate::consts::*;
@@ -8,11 +9,17 @@ use crate::state::{Entry, Market, Window, WindowState};
 
 /// `refund_entry()`
 ///
-/// * Who: anyone (the owner does not need to sign; the recipient token
-///   account must be owned by `entry.owner`).
+/// * Who: anyone (the owner does not need to sign). The recipient must be
+///   the owner's associated token account for the quote mint, owned by
+///   `entry.owner`: the account the site, wallets and the keeper look at.
+///   (Before the second review any token account the owner owned was
+///   accepted, and anyone can create one for a wallet without its
+///   signature: a stranger could refund into an account the player never
+///   sees.)
 /// * State: window `Refunding`, entry not yet refunded.
 /// * Effect: transfers the FULL `entry.amount` from escrow to the recipient
-///   (no fee is ever taken on a refunded window); `refunded = true`.
+///   (no fee is ever taken on a refunded window); `refunded = true`;
+///   `window.refunded_entries += 1` (close_window waits for every refund).
 /// * Never: blocked by anything other than the window not being in
 ///   `Refunding`. No pause, no authority.
 #[derive(Accounts)]
@@ -24,6 +31,7 @@ pub struct RefundEntry<'info> {
     pub market: Account<'info, Market>,
 
     #[account(
+        mut,
         has_one = market,
         has_one = escrow,
         seeds = [WINDOW_SEED, market.key().as_ref(), &window.index.to_le_bytes()],
@@ -50,6 +58,11 @@ pub struct RefundEntry<'info> {
         token::mint = quote_mint,
         token::token_program = quote_token_program,
         constraint = recipient.owner == entry.owner @ LadleError::RecipientNotOwner,
+        constraint = recipient.key() == get_associated_token_address_with_program_id(
+            &entry.owner,
+            &quote_mint.key(),
+            &quote_token_program.key(),
+        ) @ LadleError::RecipientNotOwner,
     )]
     pub recipient: InterfaceAccount<'info, TokenAccount>,
 
@@ -58,13 +71,15 @@ pub struct RefundEntry<'info> {
 }
 
 pub fn handle_refund_entry(ctx: Context<RefundEntry>) -> Result<()> {
-    let window = &ctx.accounts.window;
+    let window = &mut ctx.accounts.window;
     let entry = &mut ctx.accounts.entry;
 
     require!(window.state == WindowState::Refunding, LadleError::WrongWindowState);
     require!(!entry.refunded, LadleError::AlreadyRefunded);
 
     entry.refunded = true;
+    // once per entry (the flag above), so <= entry_count <= 2048; stay checked.
+    window.refunded_entries = window.refunded_entries.checked_add(1).ok_or(LadleError::Overflow)?;
     let amount = entry.amount;
 
     let market_key = ctx.accounts.market.key();

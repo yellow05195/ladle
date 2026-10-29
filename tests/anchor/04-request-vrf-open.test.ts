@@ -13,7 +13,7 @@ describe("4. request_vrf while Open", function () {
     const seed0 = deriveVrfSeed(window.pubkey, w0.closeSlot, w0.entryCount, w0.entriesCommitment);
     await expectError(send(ctx, await ctx.client.requestVrfInstructions(ctx.payer.publicKey, window.pubkey, seed0)), "WrongWindowState");
     const a = await participant(ctx, m, 10n ** 9n);
-    await enter(ctx, m, window, a, 1_000_000n);
+    await enter(ctx, m, window, a, 100_000_000n);
     const w1 = (await ctx.client.getWindow(window.pubkey)).account;
     const seed1 = deriveVrfSeed(window.pubkey, w1.closeSlot, w1.entryCount, w1.entriesCommitment);
     await expectError(send(ctx, await ctx.client.requestVrfInstructions(ctx.payer.publicKey, window.pubkey, seed1)), "WrongWindowState");

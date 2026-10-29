@@ -4,16 +4,21 @@ use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, Tran
 use crate::consts::*;
 use crate::errors::LadleError;
 use crate::events::SoldBack;
-use crate::state::{Entry, Market, Window, WindowState};
+use crate::state::{Entry, Market};
 
-/// `sell_back(amount)`
+/// `sell_back(amount, min_quote_out)`
 ///
 /// * Who: the entry owner (signer).
-/// * State: window `Settled`, `share - claimed > 0`.
+/// * State: the entry's window `Settled` (`Entry::window_settled`: read from
+///   the Entry and the Market, so it works before and after `close_window`),
+///   `share - claimed > 0`.
 /// * Effect: sells `min(amount, share - claimed)` of the still-unclaimed
 ///   share to the curve without moving the tokens (they stay in the vault):
 ///   `claimed += sold`, curve updated, quote paid from the quote vault to
-///   `owner_quote`. Zero fee.
+///   `owner_quote`. Zero fee. Fails with `SlippageExceeded` when
+///   `quote_out < min_quote_out`: sales that land before this one in the
+///   same slot (other players selling back) lower the price, and the seller
+///   signs the least they accept (the site: its quote minus a tolerance).
 /// * Never: blocked by any authority or flag.
 #[derive(Accounts)]
 pub struct SellBack<'info> {
@@ -27,17 +32,10 @@ pub struct SellBack<'info> {
     pub market: Account<'info, Market>,
 
     #[account(
-        has_one = market,
-        seeds = [WINDOW_SEED, market.key().as_ref(), &window.index.to_le_bytes()],
-        bump = window.bump,
-    )]
-    pub window: Account<'info, Window>,
-
-    #[account(
         mut,
-        has_one = window,
+        has_one = market,
         has_one = owner,
-        seeds = [ENTRY_SEED, window.key().as_ref(), entry.owner.as_ref()],
+        seeds = [ENTRY_SEED, entry.window.as_ref(), entry.owner.as_ref()],
         bump = entry.bump,
     )]
     pub entry: Account<'info, Entry>,
@@ -55,17 +53,17 @@ pub struct SellBack<'info> {
     pub quote_token_program: Interface<'info, TokenInterface>,
 }
 
-pub fn handle_sell_back(ctx: Context<SellBack>, amount: u64) -> Result<()> {
-    let window = &ctx.accounts.window;
+pub fn handle_sell_back(ctx: Context<SellBack>, amount: u64, min_quote_out: u64) -> Result<()> {
     let entry = &mut ctx.accounts.entry;
     let market = &mut ctx.accounts.market;
-    require!(window.state == WindowState::Settled, LadleError::WrongWindowState);
+    require!(entry.window_settled(market.next_settle_index), LadleError::WrongWindowState);
 
     let unclaimed = entry.share.checked_sub(entry.claimed).ok_or(LadleError::Overflow)?;
     let sold = amount.min(unclaimed);
     require!(sold > 0, LadleError::NothingToClaim);
 
     let (quote_out, new_curve) = market.curve.sell(sold)?;
+    require!(quote_out >= min_quote_out, LadleError::SlippageExceeded);
     // Solvency: tokens sold back are part of the curve's outstanding supply,
     // so the virtual reserve never drops below the initial one and the real
     // vault always covers `quote_out`. Kept as a defensive check.
@@ -96,7 +94,7 @@ pub fn handle_sell_back(ctx: Context<SellBack>, amount: u64) -> Result<()> {
     }
 
     emit!(SoldBack {
-        window: window.key(),
+        window: entry.window,
         index: entry.index,
         owner: entry.owner,
         amount_tokens: sold,

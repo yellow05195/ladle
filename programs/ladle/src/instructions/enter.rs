@@ -12,7 +12,8 @@ use crate::state::{cap_allows, Entry, Market, Window, WindowState};
 /// * Who: the entrant (signer; also the transfer authority of `owner_quote`
 ///   and payer of the Entry rent).
 /// * State: window `Open` and `clock.slot < close_slot`, fewer than
-///   MAX_ENTRIES_PER_WINDOW entries, `0 < amount <= max_entry_amount`, and
+///   MAX_ENTRIES_PER_WINDOW entries,
+///   `MIN_ENTRY_AMOUNT <= amount <= max_entry_amount`, and
 ///   the cap rule: with `new_total = total + amount`,
 ///   `amount * 10000 <= max_entry_bps * new_total` OR
 ///   `new_total <= entry_floor_amount`.
@@ -28,6 +29,7 @@ use crate::state::{cap_allows, Entry, Market, Window, WindowState};
 ///   CPI, so several entries in the same slot see each other's totals.
 /// * Never: can be undone. There is no cancel; the stake leaves escrow only
 ///   via settlement (fees + curve) or, if the VRF times out, a full refund.
+///   Refused by the wind-down build (`WindingDown`).
 #[derive(Accounts)]
 pub struct Enter<'info> {
     #[account(mut)]
@@ -80,12 +82,13 @@ pub fn handle_enter(ctx: Context<Enter>, amount: u64) -> Result<()> {
     let window = &mut ctx.accounts.window;
     let entry_info = ctx.accounts.entry.to_account_info();
 
+    require!(!WIND_DOWN, LadleError::WindingDown);
     require!(window.state == WindowState::Open, LadleError::WrongWindowState);
     let slot = Clock::get()?.slot;
     require!(slot < window.close_slot, LadleError::WindowClosed);
     require!(*entry_info.owner != crate::ID, LadleError::AlreadyEntered);
     require!(window.entry_count < MAX_ENTRIES_PER_WINDOW, LadleError::WindowFull);
-    require!(amount > 0, LadleError::ZeroAmount);
+    require!(amount >= MIN_ENTRY_AMOUNT, LadleError::EntryTooSmall);
     require!(amount <= market.max_entry_amount, LadleError::EntryTooLarge);
 
     let new_total = window
@@ -101,6 +104,7 @@ pub fn handle_enter(ctx: Context<Enter>, amount: u64) -> Result<()> {
     let index = window.entry_count;
     let owner = ctx.accounts.owner.key();
     let window_key = window.key();
+    let window_index = window.index;
     window.total_amount = new_total;
     // entry_count < MAX_ENTRIES_PER_WINDOW (2048): +1 cannot overflow u32.
     window.entry_count = index + 1;
@@ -113,6 +117,7 @@ pub fn handle_enter(ctx: Context<Enter>, amount: u64) -> Result<()> {
         &entry_info,
         8 + Entry::INIT_SPACE,
         &[ENTRY_SEED, window_key.as_ref(), owner.as_ref(), &[bump]],
+        &crate::ID,
     )?;
     Entry {
         window: window_key,
@@ -124,6 +129,10 @@ pub fn handle_enter(ctx: Context<Enter>, amount: u64) -> Result<()> {
         claimed: 0,
         refunded: false,
         bump,
+        // window has_one market: the market the stake and the share belong to
+        market: market.key(),
+        window_index,
+        settled: false,
     }
     .try_serialize(&mut &mut entry_info.try_borrow_mut_data()?[..])?;
 

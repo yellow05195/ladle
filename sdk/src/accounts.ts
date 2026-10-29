@@ -18,12 +18,19 @@ export const DISCRIMINATORS = {
   Entry: accountDiscriminator("Entry"),
 } as const;
 
-/** `8 + INIT_SPACE` of each account (fixed sizes; strings use their max_len). */
+/**
+ * `8 + INIT_SPACE` of each account (fixed sizes; strings use their max_len).
+ * Market ends with 64 bytes carved into `notice_start`, `live_windows`,
+ * `counts_windows` and 47 reserved bytes (626 since the second review, was
+ * 562): a market made before still decodes (its strings leave the room), so
+ * scan markets by discriminator, not by size. Window ends with 64 reserved
+ * bytes since the third review (507, was 443).
+ */
 export const ACCOUNT_SIZES = {
   Integration: 8 + 32 + 2 + 1,
-  Market: 8 + 32 * 5 + 16 + 8 + 8 + 8 + 2 + 8 + 8 + 8 + 1 + 8 + 32 + 32 + 1 + (4 + 32) + (4 + 10) + (4 + 200),
-  Window: 8 + 32 + 8 + 1 + 8 + 8 + 8 + 8 + 4 + 32 + 32 + 1 + 8 + 32 + 64 + 16 + 4 + 4 + 32 + 8 + 8 + 8 + 8 + 32 + 1 + 32 + 4,
-  Entry: 8 + 32 + 32 + 4 + 8 + 8 + 8 + 8 + 1 + 1,
+  Market: 8 + 32 * 5 + 16 + 8 + 8 + 8 + 2 + 8 + 8 + 8 + 1 + 8 + 32 + 32 + 1 + (4 + 32) + (4 + 10) + (4 + 200) + 64,
+  Window: 8 + 32 + 8 + 1 + 8 + 8 + 8 + 8 + 4 + 32 + 32 + 1 + 8 + 32 + 64 + 16 + 4 + 4 + 32 + 8 + 8 + 8 + 8 + 32 + 1 + 32 + 4 + 32 + 64,
+  Entry: 8 + 32 + 32 + 4 + 8 + 8 + 8 + 8 + 1 + 1 + 32 + 8 + 1,
 } as const;
 
 /** Byte offsets used for `memcmp` filters. */
@@ -34,6 +41,8 @@ export const OFFSETS = {
   entryWindow: 8,
   /** `Entry.owner` */
   entryOwner: 8 + 32,
+  /** `Entry.market` */
+  entryMarket: 8 + 32 + 32 + 4 + 8 + 8 + 8 + 8 + 1 + 1,
   /** `Market.token_mint` */
   marketTokenMint: 8 + 32,
 } as const;
@@ -118,6 +127,10 @@ export function decodeMarket(data: Uint8Array): Market {
     name: r.string(),
     symbol: r.string(),
     uri: r.string(),
+    // v25 fields, carved out of `reserved`: zero in a market made before them
+    ...(r.remaining >= 17
+      ? { noticeStart: BigInt.asIntN(64, r.u64()), liveWindows: r.u64(), countsWindows: r.bool() }
+      : { noticeStart: 0n, liveWindows: 0n, countsWindows: false }),
   };
 }
 
@@ -128,7 +141,7 @@ export function decodeWindow(data: Uint8Array): Window {
   const index = r.u64();
   const stateByte = r.u8();
   if (stateByte > 5) throw new Error(`Window: unknown state ${stateByte}`);
-  return {
+  const w = {
     market,
     index,
     state: stateByte as WindowState,
@@ -154,8 +167,10 @@ export function decodeWindow(data: Uint8Array): Window {
     escrow: r.pubkey(),
     bump: r.u8(),
     opener: r.pubkey(),
-    closedEntries: r.u32(),
+    refundedEntries: r.u32(),
+    vrfPayer: r.pubkey(),
   };
+  return { ...w, closedEntries: w.refundedEntries };
 }
 
 export function decodeEntry(data: Uint8Array): Entry {
@@ -171,6 +186,9 @@ export function decodeEntry(data: Uint8Array): Entry {
     claimed: r.u64(),
     refunded: r.bool(),
     bump: r.u8(),
+    market: r.pubkey(),
+    windowIndex: r.u64(),
+    settled: r.bool(),
   };
 }
 

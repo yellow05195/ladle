@@ -22,6 +22,7 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   AuthorityType,
   ExtensionType,
+  NATIVE_MINT,
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
@@ -31,6 +32,7 @@ import {
   createInitializeTransferHookInstruction,
   createMintToInstruction,
   createSetAuthorityInstruction,
+  createSyncNativeInstruction,
   getAccount,
   getAssociatedTokenAddressSync,
   getMintLen,
@@ -123,8 +125,10 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export type QuoteExtension = "none" | "freeze" | "transferFee" | "transferHook" | "permanentDelegate";
 
 /**
- * A quote mint (6 decimals). `program` classic or Token-2022; `ext` adds the
- * extension (or a freeze authority) that create_market must reject.
+ * A quote mint other than wSOL (6 decimals), for the refusals only: since
+ * the final review `create_market` takes wSOL and nothing else
+ * (`QuoteMintNotWsol`). `program` classic or Token-2022; `ext` adds an
+ * extension (or a freeze authority).
  */
 export async function createQuoteMint(ctx: Ctx, program: PublicKey = TOKEN_PROGRAM_ID, ext: QuoteExtension = "none"): Promise<PublicKey> {
   const mint = Keypair.generate();
@@ -147,13 +151,22 @@ export async function createQuoteMint(ctx: Ctx, program: PublicKey = TOKEN_PROGR
   return mint.publicKey;
 }
 
+/** `amount` of quote into `owner`'s ATA: wrapped from the payer's SOL on the wSOL mint (every market), minted otherwise. */
 export async function mintQuoteTo(ctx: Ctx, mint: PublicKey, program: PublicKey, owner: PublicKey, amount: bigint): Promise<PublicKey> {
   const ata = getAssociatedTokenAddressSync(mint, owner, true, program, ASSOCIATED_TOKEN_PROGRAM_ID);
   await send(ctx, [
     createAssociatedTokenAccountIdempotentInstruction(ctx.payer.publicKey, ata, owner, mint, program, ASSOCIATED_TOKEN_PROGRAM_ID),
-    createMintToInstruction(mint, ata, ctx.payer.publicKey, amount, [], program),
+    ...quoteInstructions(ctx, mint, program, ata, amount),
   ]);
   return ata;
+}
+
+/** Fill a quote ATA: SOL moved in and synced on the wSOL mint, a mint_to otherwise. */
+function quoteInstructions(ctx: Ctx, mint: PublicKey, program: PublicKey, ata: PublicKey, amount: bigint): TransactionInstruction[] {
+  if (mint.equals(NATIVE_MINT)) {
+    return [SystemProgram.transfer({ fromPubkey: ctx.payer.publicKey, toPubkey: ata, lamports: amount }), createSyncNativeInstruction(ata, program)];
+  }
+  return [createMintToInstruction(mint, ata, ctx.payer.publicKey, amount, [], program)];
 }
 
 export async function tokenBalance(ctx: Ctx, account: PublicKey, program: PublicKey = TOKEN_PROGRAM_ID): Promise<bigint> {
@@ -192,9 +205,10 @@ export function buildCreateMarket(ctx: Ctx, quoteMint: PublicKey, quoteProgram: 
   return { ix, tokenMint, market };
 }
 
+/** A market quoted in wSOL (the only quote mint create_market accepts since the final review). */
 export async function createMarket(ctx: Ctx, opts: { quoteMint?: PublicKey; quoteProgram?: PublicKey; params?: Partial<CreateMarketParams>; integration?: PublicKey | null } = {}): Promise<MarketCtx> {
   const quoteProgram = opts.quoteProgram ?? TOKEN_PROGRAM_ID;
-  const quoteMint = opts.quoteMint ?? (await createQuoteMint(ctx, quoteProgram));
+  const quoteMint = opts.quoteMint ?? NATIVE_MINT;
   const { ix, tokenMint, market } = buildCreateMarket(ctx, quoteMint, quoteProgram, defaultParams(opts.params), opts.integration ?? null);
   await send(ctx, [ix], [tokenMint]);
   return { market, tokenMint: tokenMint.publicKey, quoteMint, quoteProgram, integration: opts.integration ?? null };
@@ -230,7 +244,7 @@ export async function crowd(ctx: Ctx, m: MarketCtx, n: number, quoteAmount: bigi
     for (const p of out.slice(i, i + 4)) {
       p.quote = getAssociatedTokenAddressSync(m.quoteMint, p.kp.publicKey, true, m.quoteProgram, ASSOCIATED_TOKEN_PROGRAM_ID);
       ixs.push(createAssociatedTokenAccountIdempotentInstruction(ctx.payer.publicKey, p.quote, p.kp.publicKey, m.quoteMint, m.quoteProgram, ASSOCIATED_TOKEN_PROGRAM_ID));
-      ixs.push(createMintToInstruction(m.quoteMint, p.quote, ctx.payer.publicKey, quoteAmount, [], m.quoteProgram));
+      ixs.push(...quoteInstructions(ctx, m.quoteMint, m.quoteProgram, p.quote, quoteAmount));
     }
     await send(ctx, ixs);
   }

@@ -18,13 +18,13 @@ import {
 describe("16. a crowd of 50 in one round", function () {
   this.timeout(1_800_000);
   let ctx: Ctx; let m: MarketCtx;
-  before(async () => { ctx = env(); m = await createMarket(ctx, { params: { windowSlots: 300n, maxEntryBps: 2_000, entryFloorAmount: 50_000_000n } }); });
+  before(async () => { ctx = env(); m = await createMarket(ctx, { params: { windowSlots: 300n, maxEntryBps: 2_000, entryFloorAmount: 5_000_000_000n } }); });
 
   it("50 enters built from the same snapshot all land and settle exactly", async () => {
     const window = await openWindow(ctx, m);
     const people = await crowd(ctx, m, 50, 10n ** 9n);
     const snapshot = await ctx.client.getWindow(window.pubkey);
-    const amounts = people.map((_, i) => 1_000_000n + BigInt(i) * 10_000n);
+    const amounts = people.map((_, i) => 100_000_000n + BigInt(i) * 1_000_000n);
     const results = await Promise.allSettled(people.map((p, i) =>
       send(ctx, [enterInstruction(ctx, m, snapshot, p.kp.publicKey, p.quote, amounts[i]!)], [p.kp], p.kp)));
     const failed = results.filter((r) => r.status === "rejected");
@@ -36,7 +36,7 @@ describe("16. a crowd of 50 in one round", function () {
     const entries = await ctx.client.getEntries(window.pubkey);
     assert.deepEqual(entries.map((e) => e.account.index), Array.from({ length: 50 }, (_, i) => i));
     assert.equal(new Set(entries.map((e) => e.account.owner.toBase58())).size, 50, "one entry per wallet");
-    await expectError(send(ctx, [enterInstruction(ctx, m, snapshot, people[7]!.kp.publicKey, people[7]!.quote, 1_000n)], [people[7]!.kp], people[7]!.kp), "AlreadyEntered");
+    await expectError(send(ctx, [enterInstruction(ctx, m, snapshot, people[7]!.kp.publicKey, people[7]!.quote, 100_000n)], [people[7]!.kp], people[7]!.kp), "AlreadyEntered");
 
     await sealAndRequest(ctx, m, window);
     await waitFulfilled(ctx, window.pubkey);

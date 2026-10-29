@@ -1,0 +1,58 @@
+# /etc/systemd/system/ladle-keeper.service (deploy/install.sh copies it)
+#
+# The Ladle keeper: opens, seals, requests VRF, settles and closes rounds.
+# Settings: /etc/ladle/keeper.env (scripts/mainnet-up.ps1 writes it; template
+# deploy/keeper.env.example), root:root 0600: systemd reads it, the keeper
+# process cannot. Key: /etc/ladle/keeper.json, root:ladle-keeper 0640. The
+# keeper runs as its own user, ladle-keeper: the chat relay (user ladle, open
+# to the internet) can read neither file.
+#
+#   sudo systemctl enable --now ladle-keeper
+#   journalctl -u ladle-keeper -f          (JSON lines)
+#   curl -s 127.0.0.1:8788/health
+[Unit]
+Description=Ladle keeper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ladle-keeper
+Group=ladle-keeper
+WorkingDirectory=/srv/ladle
+EnvironmentFile=/etc/ladle/keeper.env
+ExecStart=/usr/bin/node --experimental-strip-types --no-warnings keeper/src/index.ts
+# SIGTERM: the keeper finishes its current tick and exits 0 (25 s at most).
+# KEEPER_DRAIN=1 in keeper.env: it finishes every round, then exits 0 by itself
+# (not restarted: Restart=on-failure).
+KillSignal=SIGTERM
+TimeoutStopSec=40
+Restart=on-failure
+RestartSec=5
+# exit 2 = a configuration problem (logged): fix keeper.env instead of looping
+RestartPreventExitStatus=2
+MemoryMax=512M
+LimitNOFILE=4096
+
+# hardening: it reads its code, its settings and its key, and talks HTTPS
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+ReadOnlyPaths=/srv/ladle /etc/ladle
+InaccessiblePaths=-/etc/ladle/chat.env -/var/lib/ladle
+
+[Install]
+WantedBy=multi-user.target

@@ -13,7 +13,9 @@ use crate::state::{check_page, Market, Window, WindowState};
 /// * State: window `Tallied`. Same cursor rule as `tally_page`, on
 ///   `settle_cursor`. Remaining accounts: Entry PDAs [from, to), writable.
 /// * Effect per entry: `w = entry_weight(amount, total, roll, roll_sum)`,
-///   `(share, cum) = share_step(tokens_out, weight_sum(total), cum, w)`.
+///   `(share, cum) = share_step(tokens_out, weight_sum(total), cum, w)`,
+///   `settled = true` (the share is final; selling it still waits for the
+///   whole window, see `Entry::window_settled`).
 ///   Reads only the frozen `total_amount`, `roll_sum`, `tokens_out`.
 /// * End: requires `cum == weight_sum(total)` (so the shares sum exactly to
 ///   `tokens_out`), state -> `Settled`, `market.next_settle_index += 1`.
@@ -70,6 +72,7 @@ pub fn handle_settle_page<'info>(
         cum = next;
         prev_quota = q;
         entry.share = share;
+        entry.settled = true;
         entry.exit(&crate::ID)?;
         emit!(EntrySettled {
             window: window_key,
