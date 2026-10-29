@@ -65,10 +65,14 @@ export async function POST(request: Request) {
     const why = refused(call);
     if (why) return Response.json({ jsonrpc: "2.0", id: call.id ?? null, error: { code: -32601, message: why } }, { status: 403, headers });
   }
-  try {
-    const res = await fetch(UPSTREAM, { method: "POST", headers: { "content-type": "application/json" }, body: text, cache: "no-store" });
-    return new Response(await res.text(), { status: res.status, headers: { ...headers, "content-type": "application/json" } });
-  } catch {
-    return Response.json({ jsonrpc: "2.0", id: null, error: { code: -32603, message: "upstream RPC unreachable" } }, { status: 502, headers });
+  // the provider first; the cluster's public endpoint when it fails or throttles (a free plan's credits run out)
+  const upstreams = UPSTREAM === PUBLIC_RPC[CLUSTER] ? [UPSTREAM] : [UPSTREAM, PUBLIC_RPC[CLUSTER]];
+  for (const [i, url] of upstreams.entries()) {
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: text, cache: "no-store" });
+      if ((res.status === 429 || res.status >= 500 || res.status === 401 || res.status === 403) && i < upstreams.length - 1) continue;
+      return new Response(await res.text(), { status: res.status, headers: { ...headers, "content-type": "application/json" } });
+    } catch { /* the next upstream */ }
   }
+  return Response.json({ jsonrpc: "2.0", id: null, error: { code: -32603, message: "upstream RPC unreachable" } }, { status: 502, headers });
 }
