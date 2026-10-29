@@ -1216,6 +1216,11 @@ export const en = {
   "h.chat.scoopMany": "{a}, {b} and {k} more scooped in",
   // v21.1: the screens restyled from the wordmark
   "h.demo.tag": "demo hall",
+  // v25.1: the light-mode marker (a browser drawing without its graphics card: components/ui/LightTag.tsx)
+  "h.light.tag": "light mode",
+  "h.light.sub": "no graphics acceleration",
+  "h.light.aria": "Light mode: this browser draws the hall without its graphics card",
+  "h.light.slip": "This browser draws without its graphics card, so the hall runs in light mode: a smaller picture, fewer frames. Turn graphics acceleration on in the browser's settings (Chrome: Settings, System) and reload for the full hall.",
   "h.chat.more": "+{n} more",
   "h.rs.shareShort": "Share",
   "h.rs.soldShort": "Sold back · {sol} SOL",
