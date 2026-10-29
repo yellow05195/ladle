@@ -1,6 +1,6 @@
 # The owner's Helius key, for the OWNER to paste (desktop "Ajouter ma cle Helius.cmd"): it never goes
 # through a chat or a command line. It is checked against mainnet, saved to
-# %USERPROFILE%\.config\ladle\helius-rpc.txt (the keeper on this PC reads it: scripts\keeper-mainnet-local.cmd),
+# %USERPROFILE%\.config\ladle\helius-rpc.txt (not the keeper's: its 2 s polls would use up a free plan's credits),
 # and set as LADLE_RPC_UPSTREAM, a server-only secret of the Vercel project: the site's relay app/api/rpc
 # calls it, no browser ever sees it. The next production deploy uses it.
 $ErrorActionPreference = "Stop"
