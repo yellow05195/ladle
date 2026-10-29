@@ -23,6 +23,9 @@ set KEEPER_CU_PRICE_MAX=100000
 set KEEPER_MAX_FEE_SOL=0.0005
 set KEEPER_SETTLE_STALL_MIN=10
 set KEEPER_ALERT_BELOW_SOL=0.2
+rem the owner's Helius RPC when saved (scripts\helius-key.ps1); the deployment record's public RPC otherwise
+set RPC_URL=
+if exist "%KEYS%\helius-rpc.txt" for /f "usebackq delims=" %%u in ("%KEYS%\helius-rpc.txt") do set "RPC_URL=%%u"
 
 :loop
 set "MODE=normal"
