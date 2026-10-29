@@ -106,6 +106,10 @@ export function HallCanvas({ compact = false }: { compact?: boolean }) {
     });
     return () => { alive = false; window.removeEventListener("resize", onResize); off(); };
   }, []);
+  // v25.1: the paced low tier gives up on a machine that cannot hold it (HallWorld FrameDriver sets the store's quality
+  // to none): the poster, and the canvas with its context goes
+  const fellBack = useHall((s) => s.quality === "none");
+  useEffect(() => { if (fellBack && q && q !== "none") setQ("none"); }, [fellBack, q]);
 
   return (
     <>

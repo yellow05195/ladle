@@ -3,9 +3,9 @@
 /**
  * The hall's quality tier and its frame-time governor's verdict (perf v21.4, F5; detectQuality moved from HallCanvas).
  *
- * A software renderer (SwiftShader, llvmpipe, WARP) cannot run the live hall: frames of 300 to 950 ms in the GPU
- * process, which stalls the compositor and the page with it (1 to 5 fps for the whole visit). It gets the poster
- * ('none'), the page fully responsive. The GPU is asked once, in a throwaway worker on a 1 px OffscreenCanvas, with
+ * A software renderer (SwiftShader, llvmpipe, WARP) cannot run the full hall: frames of 300 to 950 ms in the GPU
+ * process, which stalls the compositor and the page with it (1 to 5 fps for the whole visit). v25.1: it gets the low
+ * tier, paced (lowDpr, PACE_GAP: HallWorld), the poster only if even that cannot hold. The GPU is asked once, in a throwaway worker on a 1 px OffscreenCanvas, with
  * failIfMajorPerformanceCaveat (a blocklisted or software GPU refuses the context outright), then by its renderer
  * string (a browser told to ignore its blocklist hands SwiftShader out anyway). The context's synchronous round trips
  * to the GPU process (creation, the renderer string, the context loss) stay in the worker: on the main thread they
@@ -19,7 +19,7 @@ const SOFTWARE = /swiftshader|llvmpipe|softpipe|software|basic render|microsoft 
 /** past this the worker is taken as unable to answer (blocked, crashed): the main-thread probe decides */
 const WORKER_MS = 2500;
 
-/** "hw": a GPU worth the live hall; "sw": a software or caveated GPU, or no WebGL (the poster); "?": this probe cannot tell */
+/** "hw": a GPU worth the live hall; "sw": a software or caveated GPU (the paced low tier), or no WebGL; "?": this probe cannot tell */
 type Gpu = "hw" | "sw" | "?";
 
 // the worker's whole source: one context with the caveat; refused, one without it tells a caveated GPU ("sw") from a worker
@@ -86,6 +86,10 @@ function probeHere(): "hw" | "sw" {
 /** the worker's answer, asked once per page (the GPU does not change) */
 let asked: Promise<Gpu> | null = null;
 
+/** v25.1: the GPU was found to be a software one (WARP, SwiftShader, llvmpipe) or caveated: HallWorld paces its low tier for it. */
+let software = false;
+export function softwareGpu(): boolean { return software; }
+
 /**
  * Asks the GPU ahead of detectQuality (fix:1, T7): HallCanvas calls it from its module's load, so the worker (a thread,
  * then a context made in the GPU process) runs beside the page's hydration. Asked from HallCanvas's effect, after the
@@ -97,16 +101,40 @@ export function preloadQuality(): void {
 }
 
 /**
- * The hall's tier: the ?q= override, else 'none' (the poster) without a GPU worth the live hall, else high or mid by the
- * screen and the cores. Asynchronous: the GPU is asked off the main thread (about 10 ms on a hardware GPU).
+ * The hall's tier: the ?q= override, else high or mid by the screen and the cores on a hardware GPU. v25.1: a software
+ * or caveated GPU (a browser with its graphics acceleration off: common) gets the low tier, paced for it (HallWorld:
+ * a small drawing buffer, frames spaced so the compositor keeps time for the page, the poster if even that cannot
+ * hold), no longer the poster outright: the room, its players and the tour's camera stay live. No WebGL: the poster.
+ * Asynchronous: the GPU is asked off the main thread (about 10 ms on a hardware GPU).
  */
 export async function detectQuality(): Promise<Quality> {
   const q = forced();
-  if (q) return q;
+  if (q) { software = q === "low"; return q; }
   if (typeof WebGLRenderingContext === "undefined") return "none";
   const g = await (asked ??= probeWorker());
-  return (g === "?" ? probeHere() : g) === "hw" ? tierOf() : "none";
+  if ((g === "?" ? probeHere() : g) === "hw") return tierOf();
+  software = true;
+  return "low";
 }
+
+/**
+ * v25.1: the low tier's drawing buffer, as a pixel ratio: about LOW_LINES lines tall whatever the window (a software
+ * renderer's frame costs its pixel count; 420 lines of a 945-line window is a fifth of its pixels), never above 1.
+ */
+const LOW_LINES = 420;
+export function lowDpr(): number {
+  if (typeof window === "undefined") return 1;
+  return Math.max(0.25, Math.min(1, LOW_LINES / Math.max(1, window.innerHeight)));
+}
+
+/**
+ * v25.1: the low tier's pacing. A software frame is drawn in the GPU process, which also composites the page: back to
+ * back frames freeze the scroll. The next frame is asked PACE_GAP times the last one's cost after it (the cost read as
+ * the wait from asking for a frame to drawing it), at most 15 a second; a median cost over GIVE_UP_MS, once warm, means
+ * the machine cannot hold even this, and the hall falls back to the poster.
+ */
+export const PACE_GAP = 1.6;
+export const GIVE_UP_MS = 450;
 
 /** AdaptiveDpr's window: one verdict per this many ms of frames. */
 export const FRAME_WINDOW_MS = 2000;

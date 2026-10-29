@@ -6,8 +6,9 @@
  * modal canvas is open; below the fold it drops to 15 fps, past two
  * viewport heights it stops (one last frame), except on the home's scroll
  * tour (v21), where the hall is the page and keeps its full rate. The low
- * tier (only through ?q=low: a software renderer gets the poster, quality.ts)
- * always runs at 15 fps. perf v21.4: no frame is drawn before the WarmGate
+ * tier always runs at 15 fps at most; v25.1: it is a software GPU's (quality.ts),
+ * drawn about 420 lines tall and paced to leave the compositor time for the
+ * page, the poster if even that cannot hold. perf v21.4: no frame is drawn before the WarmGate
  * has linked every program under the final environment (the Canvas starts
  * in "never"), and the scene mounts in four steps under the loader's still.
  */
@@ -24,7 +25,7 @@ import { hall, useHall, type Quality } from "./store";
 import * as THREE from "three";
 import { TOUR, tourMode, tourPose, type TourPose } from "./tour";
 import { scrollingNow } from "./tour/scroll";
-import { FRAME_WINDOW_MS, frameVerdict } from "./quality";
+import { FRAME_WINDOW_MS, GIVE_UP_MS, PACE_GAP, frameVerdict, lowDpr, softwareGpu } from "./quality";
 import { WarmGate } from "./WarmGate";
 
 function FrameDriver({ quality }: { quality: Quality }) {
@@ -35,12 +36,45 @@ function FrameDriver({ quality }: { quality: Quality }) {
   const paused = useHall((s) => s.paused);
   // perf v21.4 (F1): no frame until the WarmGate has linked every program under the final environment (the Canvas starts in "never")
   const warm = useHall((s) => s.warm);
+  // v25.1: a software GPU's low tier is paced (quality.ts PACE_GAP): the next frame is asked once the last one has had
+  // its cost again in free time, so the GPU process, which composites the page too, keeps time for the scroll
+  const paced = quality === "low" && softwareGpu();
+  const pace = useRef({ askedAt: 0, timer: 0, costs: [] as number[], since: 0, alive: false });
+  useFrame(() => {
+    const p = pace.current;
+    if (!p.alive || !p.askedAt) return;
+    const now = performance.now();
+    const cost = now - p.askedAt;
+    p.askedAt = 0;
+    if (hall.get().warm) {
+      p.costs.push(cost);
+      if (!p.since) p.since = now;
+      // ~3 s of frames, then a verdict: a median past GIVE_UP_MS is a machine that cannot hold even this (the poster)
+      if (now - p.since > 3000) {
+        const a = [...p.costs].sort((x, y) => x - y);
+        const med = a[a.length >> 1] ?? 0;
+        p.costs = []; p.since = 0;
+        if (med > GIVE_UP_MS) { p.alive = false; hall.set({ quality: "none" }); return; }
+      }
+    }
+    p.timer = window.setTimeout(() => { if (p.alive) { p.askedAt = performance.now(); invalidate(); } }, Math.max(1000 / 15, cost * PACE_GAP));
+  });
   useEffect(() => {
     let id = 0;
+    const p = pace.current;
     const apply = () => {
       clearInterval(id);
+      clearTimeout(p.timer);
+      p.alive = false;
       const hidden = document.visibilityState === "hidden";
       if (!warm || hidden || paused || below === 2) { setFrameloop("never"); if (!hidden) invalidate(); return; }
+      if (paced) {
+        setFrameloop("demand");
+        p.alive = true;
+        p.askedAt = performance.now();
+        invalidate();
+        return;
+      }
       if (quality === "low" || below === 1) {
         setFrameloop("demand");
         id = window.setInterval(() => invalidate(), 1000 / 15);
@@ -50,8 +84,8 @@ function FrameDriver({ quality }: { quality: Quality }) {
     };
     apply();
     document.addEventListener("visibilitychange", apply);
-    return () => { clearInterval(id); document.removeEventListener("visibilitychange", apply); };
-  }, [warm, quality, below, paused, setFrameloop, invalidate]);
+    return () => { clearInterval(id); clearTimeout(p.timer); p.alive = false; document.removeEventListener("visibilitychange", apply); };
+  }, [warm, quality, below, paused, paced, setFrameloop, invalidate]);
   // (glReady is the WarmGate's: it goes true with warm)
   useEffect(() => {
     const ctx = gl.getContext();
@@ -307,9 +341,12 @@ function HallWorld({ quality, phone, compact = false }: { quality: Quality; phon
   const driver = useMemo(() => <FrameDriver quality={quality} />, [quality]);
   const clock = useMemo(() => <MountSteps step={step} next={nextStep} />, [step, nextStep]);
   const gate = useMemo(() => (quality === "none" ? null : <WarmGate mounted={mountedAll} />), [quality, mountedAll]);
+  // v25.1: the low tier's drawing buffer is about 420 lines tall (quality.ts lowDpr), the browser scales it up
+  const lowRatio = useMemo(() => (quality === "low" ? lowDpr() : 1), [quality]);
   const first = useMemo(() => (
     <>
-      {quality === "none" ? null : <Warmup />}
+      {/* (v25.1: not on the low tier: each priming pose is a whole-scene draw, hundreds of ms on a software GPU) */}
+      {quality === "none" || quality === "low" ? null : <Warmup />}
       {process.env.NODE_ENV !== "production" ? <PerfProbe /> : null}
       {quality === "high" ? <AdaptiveDpr max={maxDpr} start={maxDpr} onDpr={setDpr} /> : null}
       <CameraRig phone={phone} compact={compact} />
@@ -339,7 +376,7 @@ function HallWorld({ quality, phone, compact = false }: { quality: Quality; phon
     <Canvas
       className="hall-gl"
       frameloop="never"
-      dpr={quality === "high" ? dpr : 1}
+      dpr={quality === "high" ? dpr : quality === "low" ? lowRatio : 1}
       shadows={quality === "high" ? "percentage" : false}
       gl={gl}
       camera={camera}
