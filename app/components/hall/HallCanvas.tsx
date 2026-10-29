@@ -117,7 +117,9 @@ export function HallCanvas({ compact = false }: { compact?: boolean }) {
     <div ref={stageRef} className={`hall-stage ${compact ? "compact" : ""}`} data-scroll="0" data-route={route} aria-hidden="true">
       <HallBridge />
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className={`hall-poster ${glReady && q !== "none" ? "gone" : ""}`} src={phone ? "/hall-poster-mobile.webp" : "/hall-poster.webp"} alt="" decoding="async" style={phone && visibleH ? { height: visibleH, objectPosition: "50% 40%" } : undefined} />
+      {/* v25.1: while a live hall is on its way (a return visit skips the loader), the poster is its soft, dimmed backdrop
+          (a sharp still of another framing, then the live room, read as a glitch); with no live hall to come, it is the hall */}
+      <img className={`hall-poster ${glReady && q !== "none" ? "gone" : ""} ${q !== "none" ? "soon" : ""}`} src={`/hall-poster${phone ? "-mobile" : ""}${q !== "none" ? "-soft" : ""}.webp`} alt="" decoding="async" style={phone && visibleH ? { height: visibleH, objectPosition: "50% 40%" } : undefined} />
       {q && q !== "none" ? <div className={`hall-canvas ${glReady ? "on" : ""}`}><HallWorld quality={q} phone={phone} compact={compact} /></div> : null}
       <div className="hall-vignette" />
       <div className="hall-scrims"><i className="s-top" /><i className="s-home" /><i className="s-chat" /><i className="s-instr" /><i className="s-bottom" /></div>

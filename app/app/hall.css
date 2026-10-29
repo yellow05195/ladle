@@ -14,6 +14,8 @@
 .hall-stage { position: fixed; inset: 0; z-index: 0; overflow: hidden; background: #0d0a08; }
 .hall-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 45%; transition: opacity 300ms var(--ease-out); }
 .hall-poster.gone { opacity: 0; }
+/* v25.1: the soft backdrop (pre-blurred, dimmed: hall-poster-soft*.webp) while the live hall is on its way */
+.hall-poster.soon { transition: opacity 700ms var(--ease-out); }
 .hall-canvas { position: absolute; inset: 0; opacity: 0; transition: opacity 300ms var(--ease-out); }
 .hall-canvas.on { opacity: 1; }
 .hall-canvas canvas { display: block; width: 100% !important; height: 100% !important; }

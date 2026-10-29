@@ -48,6 +48,13 @@ try {
     if (j.out) img = img.resize(j.out);
     const info = await img.webp({ quality: 84, effort: 6 }).toFile(j.file);
     console.log(j.file, Math.round(info.size / 1024), "KB");
+    // v25.1: the posters' soft twin, the backdrop while the live hall is on its way (HallCanvas): blurred and dimmed here,
+    // never by a CSS filter (a software compositor would run it every frame of the cross-fade)
+    if (j.live) {
+      const soft = j.file.replace(/\.webp$/, "-soft.webp");
+      const s = await sharp(j.file).resize(Math.round(j.w / 2)).blur(9).modulate({ brightness: 0.62 }).webp({ quality: 72, effort: 6 }).toFile(soft);
+      console.log(soft, Math.round(s.size / 1024), "KB");
+    }
     await p.close();
   }
 } finally { close(); }

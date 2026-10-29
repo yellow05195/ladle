@@ -18,6 +18,8 @@ const infoCache = new Map<Species, SpeciesInfo>();
 const scarfMats = new Map<string, THREE.MeshStandardMaterial>();
 export const scarfMat = (c: string) => { let m = scarfMats.get(c); if (!m) { m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, metalness: 0 }); scarfMats.set(c, m); } return m; };
 const box = new THREE.BoxGeometry(1, 1, 1);
+/** v25.1: the band sits this far (m, of a 1 m pet) above the species' seam (pets.ts SCARF_Y) */
+const SCARF_LIFT = 0.035;
 
 export function applyStatic(scene: THREE.Object3D, clips: THREE.AnimationClip[]): void {
   const st = clips.find((c) => c.name === "static") ?? clips.find((c) => c.name === "idle");
@@ -46,7 +48,7 @@ export function measure(species: Species, g: GLTF): SpeciesInfo {
   // the band hugs the body cube at the seam: cast rays at that height from the sides and the back
   const meshes = (body?.children ?? []).filter((c) => (c as THREE.Mesh).isMesh) as THREE.Mesh[];
   if (meshes.length) {
-    const seamRaw = all.min.y + scarfY(species) * size.y;
+    const seamRaw = all.min.y + (scarfY(species) + SCARF_LIFT) * size.y;
     const c0 = bb.getCenter(new THREE.Vector3());
     const far = Math.max(size.x, size.z) * 2;
     const ray = new THREE.Raycaster();
@@ -60,7 +62,11 @@ export function measure(species: Species, g: GLTF): SpeciesInfo {
     if (left && right && back) {
       const w = right.x - left.x;
       bb.min.x = left.x; bb.max.x = right.x;
-      bb.min.z = back.z; bb.max.z = Math.min(bb.max.z, back.z + w * 1.02);
+      // v25.1: the front face too, cast off the centre line (the muzzle, a beak, a trunk stand out at the middle): taken as
+      // deep as it is wide, the band floated in front of a body shallower than that (the koala, the panda)
+      const fronts = [-0.3, 0.3].map((k) => hit(new THREE.Vector3(c0.x + k * w, seamRaw, c0.z + far), new THREE.Vector3(0, 0, -1))).filter((p): p is THREE.Vector3 => !!p);
+      const front = fronts.length ? Math.max(...fronts.map((p) => p.z)) : back.z + w * 1.02;
+      bb.min.z = back.z; bb.max.z = Math.min(bb.max.z, Math.max(back.z + 0.2 * w, front));
     }
   }
   const info: SpeciesInfo = {
@@ -76,8 +82,10 @@ export function buildScarf(info: SpeciesInfo, species: Species, color: string, s
   const g = new THREE.Group();
   const m = scarfMat(color);
   const { w, d, cx, cz, y0, y1 } = info.body;
-  const y = Math.min(y1 - 0.06, Math.max(y0 + 0.05, scarfY(species)));
-  const W = w + 0.04, D = d + 0.04, t = 0.06, h = 0.09;
+  // v25.1: on the body's flat sides (SCARF_LIFT above the seam, clear of the bottom's bevel, where the band read as a
+  // frame floating round the block) and close to them (1 cm out, not 2), a little deeper so it reads as cloth
+  const y = Math.min(y1 - 0.08, Math.max(y0 + 0.06, scarfY(species) + SCARF_LIFT));
+  const W = w + 0.02, D = d + 0.02, t = 0.065, h = 0.1;
   const add = (sx: number, sy: number, sz: number, x: number, yy: number, z: number, rz = 0) => {
     const mesh = new THREE.Mesh(box, m);
     mesh.scale.set(sx, sy, sz);
