@@ -1,0 +1,31 @@
+# The chat relay (chat/) on Render's free plan: no key, no RPC, nothing of the game's money in it, so it can live
+# outside the owner's PC (the keeper, which holds a key, stays there). Render: New > Blueprint > this repository.
+# Free plan: the service sleeps after 15 minutes without traffic and wakes on the next visitor (~30 to 60 s; the
+# site's room reconnects by itself); no disk, so no mute file and no resume secret (a restart asks pages to sign in
+# again). The site reads it at wss://chat.useladle.fun (a CNAME to the service, set in Vercel DNS).
+services:
+  - type: web
+    name: ladle-chat
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: chat
+    buildCommand: npm install --omit=dev --no-audit --no-fund
+    startCommand: node --experimental-strip-types --no-warnings src/index.ts
+    healthCheckPath: /health
+    autoDeploy: true
+    domains:
+      - chat.useladle.fun
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: CHAT_HOST
+        value: 0.0.0.0
+      - key: CHAT_PUBLIC_HOST
+        value: chat.useladle.fun
+      - key: CHAT_ORIGINS
+        value: https://useladle.fun,https://www.useladle.fun
+      - key: CHAT_TRUST_PROXY
+        value: "1"
+      - key: CHAT_MUTE_FILE
+        value: ""
