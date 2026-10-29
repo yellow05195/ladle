@@ -118,14 +118,20 @@ export async function detectQuality(): Promise<Quality> {
 }
 
 /**
- * v25.1: the low tier's drawing buffer, as a pixel ratio: about LOW_LINES lines tall whatever the window (a software
- * renderer's frame costs its pixel count; 420 lines of a 945-line window is a fifth of its pixels), never above 1.
+ * v25.1: the low tier's drawing buffer, as a pixel ratio: about LOW_LINES lines tall whatever the window while the camera
+ * travels (a software renderer's frame costs its pixel count; 460 lines of a 945-line window is a quarter of its pixels),
+ * REST_LINES once it has settled (the room still breathes, at fewer frames, but sharp: the 420-line picture read as
+ * pixelated at rest), never above 1.
  */
-const LOW_LINES = 420;
-export function lowDpr(): number {
+const LOW_LINES = 460, REST_LINES = 760;
+export function lowDpr(rest = false): number {
   if (typeof window === "undefined") return 1;
-  return Math.max(0.25, Math.min(1, LOW_LINES / Math.max(1, window.innerHeight)));
+  return Math.max(0.25, Math.min(1, (rest ? REST_LINES : LOW_LINES) / Math.max(1, window.innerHeight)));
 }
+/** v25.1: the camera has been still this long (ms): the low tier draws at its rest size */
+export const REST_AFTER_MS = 450;
+/** v25.1: a rest frame's median cost (ms) past which the low tier stays at its travel size (the next scroll would wait on it) */
+export const REST_MAX_MS = 260;
 
 /**
  * v25.1: the low tier's pacing. A software frame is drawn in the GPU process, which also composites the page: back to

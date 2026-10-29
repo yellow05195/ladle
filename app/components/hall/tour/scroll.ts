@@ -280,7 +280,7 @@ export function smoothScroll(on: boolean): () => void {
 }
 
 /** the wheel or key lands in something that scrolls by itself (a sheet, the chat, a dialog): leave it to the browser */
-function innerScroller(t: EventTarget | null, dy: number): boolean {
+export function innerScroller(t: EventTarget | null, dy: number): boolean {
   let el = t instanceof Element ? t : null;
   for (let k = 0; el && el !== document.body && el !== document.documentElement && k < 24; k++, el = el.parentElement) {
     if (el.closest?.("dialog[open], [role=dialog]")) return true;
@@ -291,7 +291,7 @@ function innerScroller(t: EventTarget | null, dy: number): boolean {
   }
   return false;
 }
-function pageLocked(): boolean {
+export function pageLocked(): boolean {
   const de = document.documentElement, b = document.body;
   return getComputedStyle(de).overflowY === "hidden" || (!!b && getComputedStyle(b).overflowY === "hidden");
 }

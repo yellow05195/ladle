@@ -32,7 +32,7 @@ import { useEffect, useRef } from "react";
 import { hall } from "../store";
 import { TOUR, TOUR_HOLD, tourAt, tourBus, tourMode, tourSAt, tourStopS } from "../tour";
 import { TOUR_COPY as T } from "../sections/copy";
-import { isScrollKey, onScrollInput, onScrollY, rescroll, scrollState, smoothScroll } from "./scroll";
+import { innerScroller, isScrollKey, onScrollInput, onScrollY, pageLocked, rescroll, scrollState, smoothScroll } from "./scroll";
 
 const LABELS: Record<string, string> = { how: T.how.index, room: T.room.index, scoop: T.scoop.index, curve: T.curve.index, books: T.books.index, hosts: T.hosts.index, genesis: T.gen.index, questions: T.qa.index };
 const STOPS = TOUR.slice(1).map((s) => s.id);
@@ -62,6 +62,8 @@ const HOLD0 = { desk: 0, port: 0.4 };
 const CRUISE = 1 / (1 - 0.2), CRUISE0 = 1 / (1 - 0.1);
 
 const ease = (k: number) => k * k * (3 - 2 * k);
+/** v25.1: a page's move: a cubic ease in and out (no jolt at either end) */
+const easePage = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 
 export function TourDriver() {
   const nav = useRef<HTMLElement>(null);
@@ -87,9 +89,15 @@ export function TourDriver() {
     const sAt = (q: number) => tourSAt(q, mode());
     const pathLen = () => { const S = tourStopS(mode()); return S[S.length - 1]! || 1; };
 
-    // fix:scroll:r3: the page glides under a mouse wheel and the paging keys (never under reduced motion)
-    let offGlide = smoothScroll(!mq.matches);
-    const onMq = () => { offGlide(); offGlide = smoothScroll(!mq.matches); };
+    // v25.1, paging: on a landscape screen, one turn of the wheel (or a swipe of a trackpad, or a paging key) takes the
+    // page and the camera to the next chapter (or back to the one before) in one eased move; what the reader sends while
+    // it travels is spent on it (no queue, no drift, the camera never left between two stops). Portrait screens (a finger,
+    // captions taller than the screen) and reduced motion keep the page's own scroll. fix:scroll:r3's glide stays for
+    // those landscape cases paging leaves alone (none today).
+    const pagingOn = () => !mq.matches && mode() === "desk";
+    let paging = pagingOn();
+    let offGlide = smoothScroll(!mq.matches && !paging);
+    const onMq = () => { paging = pagingOn(); offGlide(); offGlide = smoothScroll(!mq.matches && !paging); };
     mq.addEventListener?.("change", onMq);
 
     const setVeil = (v: number) => {
@@ -280,14 +288,14 @@ export function TourDriver() {
     // the veil when it is far; the reader's own wheel, finger or key interrupts it where it is
     let raf = 0;
     const stopGlide = () => { if (raf) cancelAnimationFrame(raf); raf = 0; glide = 0; };
-    const jump = (y1: number) => {
+    const jump = (y1: number, page = false) => {
       stopGlide();
       const y0 = scrollState.y;
       if (Math.abs(y1 - y0) < 2) return;
       if (mq.matches) { window.scrollTo(0, y1); return; }
       const t1 = tourAt(y1, anchors, holds);
       const d = Math.abs(sAt(t1) - sAt(tourBus.t)) / pathLen();
-      if (d > JUMP_CUT) {
+      if (d > JUMP_CUT && !page) {
         tourBus.jump = null;
         veilTo(1, 200, "cubic-bezier(0.4, 0, 1, 1)", () => {
           tourBus.snap = true;
@@ -297,7 +305,8 @@ export function TourDriver() {
         });
         return;
       }
-      const dur = Math.min(1.6, Math.max(0.6, 0.5 + d * 3.2));
+      // (a page: never under 0.85 s, the move reads as one deliberate step; never over 1.5 s, the reader waits on it)
+      const dur = page ? Math.min(1.5, Math.max(0.85, 0.7 + d * 2.4)) : Math.min(1.6, Math.max(0.6, 0.5 + d * 3.2));
       const t0 = performance.now();
       tourBus.jump = { id: ++jumpId, to: t1, t0, dur };
       glide = 1;
@@ -305,14 +314,62 @@ export function TourDriver() {
         raf = 0;
         if (!alive || !glide) return;
         const k = Math.min(1, (performance.now() - t0) / (dur * 1000));
-        window.scrollTo(0, Math.round(y0 + (y1 - y0) * ease(k)));
+        window.scrollTo(0, Math.round(y0 + (y1 - y0) * (page ? easePage(k) : ease(k))));
         if (k < 1) raf = requestAnimationFrame(step);
-        else glide = 0;
+        else { glide = 0; landedAt = performance.now(); }
       };
       raf = requestAnimationFrame(step);
     };
     jumpRef.current = jump;
+
+    // v25.1, paging: where a page can stop: every chapter's anchor, and the page's end when the questions leave room below
+    const stops = () => {
+      const maxY = Math.max(0, root.scrollHeight - window.innerHeight);
+      const s = anchors.filter((v) => v <= maxY + 1);
+      if (maxY - (s[s.length - 1] ?? 0) > 0.25 * window.innerHeight) s.push(maxY);
+      return s;
+    };
+    /** one gesture, one page: a trackpad's swipe (and its momentum) is one stream of events; a mouse wheel's notches are each their own */
+    let gesture = false, lastWheelAt = -1e9, landedAt = -1e9;
+    const pageStep = (dir: number) => {
+      const y = scrollState.y, s = stops();
+      const to = dir > 0 ? s.find((v) => v > y + 4) : [...s].reverse().find((v) => v < y - 4);
+      if (to === undefined) return false;
+      gesture = true;
+      jump(to, true);
+      return true;
+    };
+    const onPageWheel = (e: WheelEvent) => {
+      if (!paging || !e.cancelable || e.defaultPrevented || e.ctrlKey) return;
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.deltaY === 0) return;
+      if (innerScroller(e.target, e.deltaY) || pageLocked()) return;
+      e.preventDefault();
+      const now = performance.now(), quiet = now - lastWheelAt;
+      lastWheelAt = now;
+      // (under the loader the page holds still; a page in flight, and the tail of the gesture that started it, are spent on it)
+      if (!hall.get().lit || glide) return;
+      if (gesture && (scrollState.notch ? now - landedAt < 120 : quiet < 200)) return;
+      gesture = false;
+      pageStep(Math.sign(e.deltaY));
+    };
+    window.addEventListener("wheel", onPageWheel, { passive: false });
+    const onResizePaging = () => { const p = pagingOn(); if (p !== paging) onMq(); };
+    window.addEventListener("resize", onResizePaging);
+
     const offIn = onScrollInput((kind, e) => {
+      // paging: the wheel is spent on the page in flight (onPageWheel), and the paging keys turn the page
+      if (paging && kind === "wheel") return;
+      if (paging && kind === "key") {
+        const k = e as KeyboardEvent, el = k.target as HTMLElement | null;
+        const dir = k.key === "PageDown" || k.key === "ArrowDown" || ((k.key === " " || k.key === "Spacebar") && !k.shiftKey) ? 1
+          : k.key === "PageUp" || k.key === "ArrowUp" || ((k.key === " " || k.key === "Spacebar") && k.shiftKey) ? -1 : 0;
+        const own = el && el !== document.body && el !== document.documentElement && (el.isContentEditable || el.closest?.("input, textarea, select, button, a, summary, dialog, [role=dialog], [role=button], [role=slider], [role=listbox], [role=menu], [role=tab], [contenteditable]"));
+        if (dir && !own && !k.altKey && !k.ctrlKey && !k.metaKey && !innerScroller(el, dir) && !pageLocked()) {
+          k.preventDefault();
+          if (hall.get().lit && !glide) pageStep(dir);
+          return;
+        }
+      }
       if (glide || tourBus.jump) {
         // the reader takes over: the page stays where it is and the camera follows the scroll again (fix:scroll:r3-2: not
         // for a key that only moves the focus, Tab: its own scroll, if any, starts the next jump from where the camera is)
@@ -331,6 +388,8 @@ export function TourDriver() {
 
     return () => {
       alive = false;
+      window.removeEventListener("wheel", onPageWheel);
+      window.removeEventListener("resize", onResizePaging);
       offY();
       offIn();
       offGlide();

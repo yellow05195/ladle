@@ -23,12 +23,12 @@ import { Ladle, ladleReady } from "./Ladle";
 import { Staff } from "./Staff";
 import { hall, useHall, type Quality } from "./store";
 import * as THREE from "three";
-import { TOUR, tourMode, tourPose, type TourPose } from "./tour";
-import { scrollingNow } from "./tour/scroll";
-import { FRAME_WINDOW_MS, GIVE_UP_MS, PACE_GAP, frameVerdict, lowDpr, softwareGpu } from "./quality";
+import { TOUR, tourBus, tourMode, tourPose, type TourPose } from "./tour";
+import { onScrollInput, scrollState, scrollingNow } from "./tour/scroll";
+import { FRAME_WINDOW_MS, GIVE_UP_MS, PACE_GAP, REST_AFTER_MS, REST_MAX_MS, frameVerdict, lowDpr, softwareGpu } from "./quality";
 import { WarmGate } from "./WarmGate";
 
-function FrameDriver({ quality }: { quality: Quality }) {
+function FrameDriver({ quality, onLowDpr }: { quality: Quality; onLowDpr?: (r: number) => void }) {
   const { setFrameloop, invalidate, gl } = useThree();
   // v21: on the home's scroll tour the hall IS the page: it keeps playing at full rate the whole way down
   // (v21.3: read as one value, so crossing a scroll threshold on the tour re-renders nothing here)
@@ -39,14 +39,31 @@ function FrameDriver({ quality }: { quality: Quality }) {
   // v25.1: a software GPU's low tier is paced (quality.ts PACE_GAP): the next frame is asked once the last one has had
   // its cost again in free time, so the GPU process, which composites the page too, keeps time for the scroll
   const paced = quality === "low" && softwareGpu();
-  const pace = useRef({ askedAt: 0, timer: 0, costs: [] as number[], since: 0, alive: false });
+  // res: the drawing buffer's size, "move" while the camera travels, "rest" once it has settled (quality.ts lowDpr);
+  // restOk goes false on a machine whose sharp frames cost too much (the scroll would wait on them)
+  const pace = useRef({ askedAt: 0, timer: 0, costs: [] as number[], rests: [] as number[], since: 0, alive: false, res: "move" as "move" | "rest", restOk: true });
+  const setRes = useCallback((r: "move" | "rest") => {
+    const p = pace.current;
+    if (p.res === r) return;
+    p.res = r;
+    onLowDpr?.(lowDpr(r === "rest"));
+  }, [onLowDpr]);
+  // the reader's wheel, finger or key: the small, fast picture at once (the camera is about to travel)
+  useEffect(() => (paced ? onScrollInput(() => setRes("move")) : undefined), [paced, setRes]);
   useFrame(() => {
     const p = pace.current;
     if (!p.alive || !p.askedAt) return;
     const now = performance.now();
     const cost = now - p.askedAt;
     p.askedAt = 0;
-    if (hall.get().warm) {
+    const settled = p.restOk && !scrollingNow(REST_AFTER_MS) && !tourBus.jump && now - scrollState.inputAt > REST_AFTER_MS;
+    if (p.res === "rest") {
+      // sharp frames that cost too much keep the picture small for the rest of the visit
+      p.rests.push(cost);
+      if (p.rests.length >= 6) { const a = [...p.rests].sort((x, y) => x - y); p.rests = []; if ((a[3] ?? 0) > REST_MAX_MS) { p.restOk = false; setRes("move"); } }
+    }
+    if (settled !== (p.res === "rest")) setRes(settled ? "rest" : "move");
+    if (hall.get().warm && p.res === "move") {
       p.costs.push(cost);
       if (!p.since) p.since = now;
       // ~3 s of frames, then a verdict: a median past GIVE_UP_MS is a machine that cannot hold even this (the poster)
@@ -338,11 +355,12 @@ function HallWorld({ quality, phone, compact = false }: { quality: Quality; phon
   // mounts, the clock and the gate, never again what is already in (one memo for the whole fragment re-rendered every
   // mounted component of the scene at every step). Each slot keeps its place, so nothing remounts when the step moves
   const mountedAll = step >= MOUNT_STEPS;
-  const driver = useMemo(() => <FrameDriver quality={quality} />, [quality]);
+  // v25.1: the low tier's drawing buffer is about 460 lines tall while the camera travels, 760 once it rests (quality.ts
+  // lowDpr; FrameDriver switches it), the browser scales it up
+  const [lowRatio, setLowRatio] = useState(() => (quality === "low" ? lowDpr() : 1));
+  const driver = useMemo(() => <FrameDriver quality={quality} onLowDpr={setLowRatio} />, [quality]);
   const clock = useMemo(() => <MountSteps step={step} next={nextStep} />, [step, nextStep]);
   const gate = useMemo(() => (quality === "none" ? null : <WarmGate mounted={mountedAll} />), [quality, mountedAll]);
-  // v25.1: the low tier's drawing buffer is about 420 lines tall (quality.ts lowDpr), the browser scales it up
-  const lowRatio = useMemo(() => (quality === "low" ? lowDpr() : 1), [quality]);
   const first = useMemo(() => (
     <>
       {/* (v25.1: not on the low tier: each priming pose is a whole-scene draw, hundreds of ms on a software GPU) */}
