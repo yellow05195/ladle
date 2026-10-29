@@ -13,7 +13,7 @@ try { $res = Invoke-RestMethod -Method Post -Uri $url -ContentType "application/
 catch { throw "Helius refuse cette cle ($((Hide-UrlIn $_.Exception.Message $url))): rien n'a change" }
 if ($res.result -ne "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d") { throw "cette URL ne sert pas Solana mainnet (genesis $($res.result)): rien n'a change" }
 Write-EnvFile (Join-Path $script:LadleKeyDir "helius-rpc.txt") @($url)
-Write-Host "cle verifiee (Solana mainnet) et enregistree pour le keeper de ce PC" -ForegroundColor Green
+Write-Host "cle verifiee (Solana mainnet) et enregistree" -ForegroundColor Green
 Push-Location $script:LadleRoot
 try {
   $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
@@ -22,5 +22,5 @@ try {
   $code = $LASTEXITCODE
   $ErrorActionPreference = $prev
 } finally { Pop-Location }
-if ($code -ne 0) { throw "Vercel n'a pas pris la cle (le keeper de ce PC l'utilise quand meme)" }
+if ($code -ne 0) { throw "Vercel n'a pas pris la cle (elle est enregistree dans helius-rpc.txt)" }
 Write-Host "cle ajoutee au site (Vercel, secret serveur). Claude s'occupe du reste." -ForegroundColor Green
